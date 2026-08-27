@@ -179,8 +179,18 @@ public final class Message {
             return this;
         }
 
+        public Builder cc(Collection<String> addresses) {
+            this.cc.addAll(addresses);
+            return this;
+        }
+
         public Builder bcc(String... addresses) {
             this.bcc.addAll(List.of(addresses));
+            return this;
+        }
+
+        public Builder bcc(Collection<String> addresses) {
+            this.bcc.addAll(addresses);
             return this;
         }
 
