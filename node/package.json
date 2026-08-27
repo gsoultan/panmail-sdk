@@ -1,0 +1,54 @@
+{
+  "name": "@gsoultan/panmail-sdk",
+  "version": "0.1.0",
+  "description": "Node client for sending mail through a panmail gateway",
+  "keywords": [
+    "panmail",
+    "email",
+    "smtp",
+    "transactional-email"
+  ],
+  "homepage": "https://github.com/gsoultan/panmail-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/gsoultan/panmail-sdk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gsoultan/panmail-sdk.git",
+    "directory": "node"
+  },
+  "author": "gsoultan",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "bun test src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: nothing here writes to the repository. A job that needs more
+# asks for it itself.
+permissions:
+  contents: read
+
+# A new push to the same ref makes the run in flight irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is what go.mod declares. Testing only the latest lets a
+        # newer stdlib call in without anyone noticing it broke that promise.
+        go: ['1.21', '1.23']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  php:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # composer.json declares >=8.1 with no ceiling, so the newest release
+        # is part of that promise too.
+        php: ['8.1', '8.3', '8.4', '8.5']
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json
+      # The published package is defined at the repository root, because that
+      # is the only composer.json Packagist reads. PackageDefinitionTest keeps
+      # the two from drifting; this checks the published one is well formed.
+      - run: composer validate --strict --no-check-lock --no-check-publish
+        working-directory: .
+      - run: composer validate --strict --no-check-lock --no-check-publish
+      - run: composer install --prefer-dist --no-progress
+      - run: composer test
+
+  java:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21']
+    defaults:
+      run:
+        working-directory: java
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - run: mvn --batch-mode test
+
+  node:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun x tsc -p tsconfig.json --noEmit
+      - run: bun test src
+      # dist/ is what npm publishes and is not in the repository, so a build
+      # that only breaks at publish time would break it in front of a release.
+      - run: bun run build
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+      # The published protos are copies. This only checks they are still valid
+      # and self-consistent; drift from the gateway is caught by the contract
+      # test in the panmail repo, which runs this SDK against the real
+      # middleware. See docs/WIRE.md.
+      - run: buf lint proto

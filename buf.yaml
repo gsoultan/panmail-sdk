@@ -1,0 +1,11 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # The gateway's protos are copied here verbatim so the two cannot drift.
+    # Style rules it does not follow are not this repo's to fix.
+    - PACKAGE_VERSION_SUFFIX
+    - FIELD_NOT_REQUIRED

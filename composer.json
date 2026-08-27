@@ -1,0 +1,41 @@
+{
+    "name": "gsoultan/panmail-sdk",
+    "description": "PHP client for sending mail through a panmail gateway",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/gsoultan/panmail-sdk",
+    "support": {
+        "issues": "https://github.com/gsoultan/panmail-sdk/issues",
+        "source": "https://github.com/gsoultan/panmail-sdk"
+    },
+    "keywords": ["panmail", "email", "smtp", "transactional-email"],
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Panmail\\": "php/src/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "archive": {
+        "comment": "The other three languages are not part of the PHP package.",
+        "exclude": [
+            "/java",
+            "/node",
+            "/proto",
+            "/scripts",
+            "/docs",
+            "/buf.yaml",
+            "/go.mod",
+            "/*.go",
+            "/php/tests",
+            "/php/phpunit.xml",
+            "/php/composer.json"
+        ]
+    }
+}

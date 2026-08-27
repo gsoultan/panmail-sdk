@@ -1,0 +1,16 @@
+# Go
+/vendor/
+
+# PHP
+php/vendor/
+php/.phpunit.result.cache
+php/composer.lock
+
+# Java
+java/target/
+
+# Node
+node/node_modules/
+node/dist/
+# bun.lock is committed on purpose: CI installs with --frozen-lockfile, which
+# without it silently resolves fresh versions on every run instead of failing.
