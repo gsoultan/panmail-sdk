@@ -1,10 +1,12 @@
-# Go
+# Go, and composer's install at the root, which lands in the same place.
 /vendor/
 
 # PHP
 php/vendor/
 php/.phpunit.result.cache
+# A library pins nothing: the lock files are not part of what is published.
 php/composer.lock
+/composer.lock
 
 # Java
 java/target/
