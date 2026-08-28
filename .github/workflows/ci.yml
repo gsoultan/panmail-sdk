@@ -85,7 +85,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
+      # Frozen everywhere a lockfile disagreeing with the manifest is a real
+      # problem — which is everywhere except dependabot, which can update
+      # package.json but has no idea how to regenerate bun.lock. Freezing there
+      # too failed every npm bump it ever opened, on the lockfile rather than on
+      # anything about the bump.
+      - run: bun install ${{ github.actor == 'dependabot[bot]' && ' ' || '--frozen-lockfile' }}
       - run: bun x tsc -p tsconfig.json --noEmit
       - run: bun test src
       # dist/ is what npm publishes and is not in the repository, so a build
