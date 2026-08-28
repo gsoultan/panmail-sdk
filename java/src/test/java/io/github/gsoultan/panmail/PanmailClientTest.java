@@ -462,4 +462,58 @@ class PanmailClientTest {
                 () -> PanmailClient.builder().timeout(Duration.ofSeconds(-1)));
     }
 
+    /**
+     * Every recipient field takes a collection as well as varargs. to() did
+     * from the start and cc and bcc caught up later, which is the kind of
+     * asymmetry that stays invisible until someone reaches for the overload
+     * that was never there.
+     */
+    @Test
+    void everyRecipientFieldTakesACollection() throws IOException {
+        accepts();
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to(List.of("a@example.net", "b@example.net"))
+                .cc(List.of("c@example.net"))
+                .bcc(List.of("d@example.net", "e@example.net"))
+                .text("hi")
+                .build());
+
+        JsonNode body = bodies.get(0);
+        assertEquals(2, body.path("to").size());
+        assertEquals("a@example.net", body.path("to").get(0).asText());
+        assertEquals("b@example.net", body.path("to").get(1).asText());
+        assertEquals(1, body.path("cc").size());
+        assertEquals("c@example.net", body.path("cc").get(0).asText());
+        assertEquals(2, body.path("bcc").size());
+        assertEquals("d@example.net", body.path("bcc").get(0).asText());
+        assertEquals("e@example.net", body.path("bcc").get(1).asText());
+    }
+
+    /** The two spellings add to the same list rather than replacing it. */
+    @Test
+    void varargsAndCollectionRecipientsAccumulate() throws IOException {
+        accepts();
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to("first@example.net")
+                .to(List.of("second@example.net"))
+                .cc("cc-first@example.net")
+                .cc(List.of("cc-second@example.net"))
+                .text("hi")
+                .build());
+
+        JsonNode body = bodies.get(0);
+        assertEquals(2, body.path("to").size());
+        assertEquals("first@example.net", body.path("to").get(0).asText());
+        assertEquals("second@example.net", body.path("to").get(1).asText());
+        assertEquals(2, body.path("cc").size());
+        assertEquals("cc-first@example.net", body.path("cc").get(0).asText());
+        assertEquals("cc-second@example.net", body.path("cc").get(1).asText());
+    }
+
 }
