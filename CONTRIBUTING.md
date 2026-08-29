@@ -24,7 +24,13 @@ go test -race ./...
 (cd php  && composer test)
 (cd java && mvn --batch-mode test)
 (cd node && bun x tsc -p tsconfig.json --noEmit && bun test src)
+(cd node && bun run build && bun run smoke)
 ```
+
+The last one is not the same as the one above it. The suite runs under bun;
+`smoke` runs the built package on whatever `node` is on your PATH, because
+`engines` promises Node 18 and bun is not Node. CI runs it on the floor and on
+the current release.
 
 ## What a change needs
 

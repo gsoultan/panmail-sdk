@@ -63,3 +63,9 @@ The four language packages share a version number and are released together.
   `dist/` that npm publishes.
 - `.github/dependabot.yml`, watching the GitHub Actions most closely — they are
   the dependency with access to a release.
+- Node: `smoke.mjs` runs the built package on a real Node across the range
+  `engines` declares. The suite runs under bun, which is not Node — it has its
+  own fetch, streams and globals — so nothing was checking that the package
+  works on the runtime it promises. The script exercises the version-sensitive
+  paths deliberately: global `fetch`, `ReadableStream.getReader`, `TextDecoder`
+  and undici's handling of `redirect: 'error'`. Verified passing on 18.20.8.

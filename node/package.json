@@ -39,6 +39,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun test src",
+    "smoke": "node smoke.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "tsc -p tsconfig.json"
   },

@@ -97,6 +97,33 @@ jobs:
       # that only breaks at publish time would break it in front of a release.
       - run: bun run build
 
+  # The suite above runs under bun, which is not Node: it has its own fetch,
+  # its own streams and its own idea of what is global. package.json promises
+  # `engines: { node: ">=18" }` to everyone who installs the package, and
+  # nothing was checking that promise on an actual Node.
+  node-runtime:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor package.json declares, and the current release.
+        node: ['18', '24']
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      # After setup-bun, so this is the node first on PATH.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install ${{ github.actor == 'dependabot[bot]' && ' ' || '--frozen-lockfile' }}
+      - run: bun run build
+      # Plain node against dist/, which is what npm publishes and what a
+      # consumer on the floor version actually runs.
+      - run: node smoke.mjs
+
   proto:
     runs-on: ubuntu-latest
     steps:
