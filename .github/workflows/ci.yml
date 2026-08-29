@@ -85,12 +85,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      # Frozen everywhere a lockfile disagreeing with the manifest is a real
-      # problem — which is everywhere except dependabot, which can update
-      # package.json but has no idea how to regenerate bun.lock. Freezing there
-      # too failed every npm bump it ever opened, on the lockfile rather than on
-      # anything about the bump.
-      - run: bun install ${{ github.actor == 'dependabot[bot]' && ' ' || '--frozen-lockfile' }}
+      # Frozen everywhere, including dependabot's own pull requests.
+      #
+      # Exempting dependabot looked kinder — it opens npm bumps it cannot
+      # regenerate bun.lock for, so they failed on the lockfile rather than on
+      # anything about the bump. But unfreezing only moved the failure: the PR
+      # went green having never validated the lock, and merging it turned main
+      # red instead. A red PR blocks one change; a red main blocks everyone.
+      #
+      # So an npm bump needs its lock refreshed before it can merge:
+      #
+      #     gh pr checkout <n> && (cd node && bun install) \
+      #       && git commit -am 'refresh bun.lock' && git push
+      #
+      # Automating that means committing to a dependabot branch from CI, which
+      # needs pull_request_target and a write token running bun install over a
+      # dependency version nobody has reviewed yet. Not worth it for two
+      # devDependencies.
+      - run: bun install --frozen-lockfile
       - run: bun x tsc -p tsconfig.json --noEmit
       - run: bun test src
       # dist/ is what npm publishes and is not in the repository, so a build
@@ -115,10 +127,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       # After setup-bun, so this is the node first on PATH.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-      - run: bun install ${{ github.actor == 'dependabot[bot]' && ' ' || '--frozen-lockfile' }}
+      - run: bun install --frozen-lockfile
       - run: bun run build
       # Plain node against dist/, which is what npm publishes and what a
       # consumer on the floor version actually runs.
