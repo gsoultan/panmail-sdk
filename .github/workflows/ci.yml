@@ -26,7 +26,7 @@ jobs:
         go: ['1.21', '1.23']
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
       - run: gofmt -l . | tee /dev/stderr | (! read)
