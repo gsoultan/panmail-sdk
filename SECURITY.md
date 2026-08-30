@@ -36,6 +36,13 @@ response is a message id and a status; anything approaching that size is a
 proxy's error page, and buffering it is how a misbehaving intermediary turns
 into an out-of-memory error in your process.
 
+**A header cannot be made to carry a second header.** A carriage return or
+newline ends a header line, so a value holding one is an extra header the
+caller never wrote — and a tracing or correlation header built out of something
+a user supplied is exactly where that happens. All four clients refuse a header
+name outside RFC 9110's token set, and a value carrying any control character,
+when the client is constructed rather than on the first send.
+
 **The key cannot be set from two places.** The per-request header options
 (`WithHeader`, `headers`, `header()`) will not set `X-API-Key`, case
 insensitively. A second source for it would only make a mismatch possible.

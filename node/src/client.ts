@@ -46,7 +46,14 @@ export interface ClientOptions {
    */
   rateLimitRetries?: number;
 
-  /** Extra headers on every request — a tracing header, or what a proxy wants. */
+  /**
+   * Extra headers on every request — a tracing header, or what a proxy wants.
+   *
+   * A value carrying a carriage return or newline is refused: those end a
+   * header line, so a value holding one is a second header the caller did not
+   * write. A tracing header built out of something a user supplied is exactly
+   * where that matters.
+   */
   headers?: Record<string, string>;
 
   /** Supply your own fetch, for a proxy agent or a test double. */
@@ -108,6 +115,8 @@ export class PanmailClient {
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#rateLimitRetries = Math.max(0, options.rateLimitRetries ?? 0);
     this.#fetch = options.fetch ?? globalThis.fetch;
+
+    validateHeaders(options.headers ?? {});
 
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries(options.headers ?? {})) {
@@ -266,4 +275,33 @@ async function readBounded(response: Response): Promise<string> {
 
   chunks.push(decoder.decode());
   return chunks.join('');
+}
+
+/**
+ * Refuses a header that would not survive being written to the wire as
+ * written.
+ *
+ * fetch would refuse it too, but only at send time and as a TransportError —
+ * the one failure this client reports as an unknown outcome, when in truth
+ * nothing was sent at all. A header that cannot be sent is knowable when the
+ * client is built.
+ */
+function validateHeaders(headers: Record<string, string>): void {
+  // RFC 9110's token, which is what a header name is.
+  const NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  // Tab is allowed; nothing else below space is, and CR and LF end the line.
+  // eslint-disable-next-line no-control-regex
+  const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f]/;
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (!NAME.test(name)) {
+      throw new InvalidMessageError(`panmail: "${name}" is not a header name`);
+    }
+    if (CONTROL.test(value)) {
+      throw new InvalidMessageError(
+        `panmail: the value of header "${name}" contains a control character; ` +
+          'a carriage return or newline there would add a header of its own',
+      );
+    }
+  }
 }

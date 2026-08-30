@@ -647,3 +647,30 @@ func TestAttachmentContentTypesMatchTheSharedFixture(t *testing.T) {
 		})
 	}
 }
+
+// A carriage return or newline ends a header line, so a value carrying one is
+// a second header the caller never wrote. net/http refuses to send it, but
+// only at send time and as a transport error — the one outcome this client
+// reports as unknown, when in truth nothing was sent. New refuses it instead.
+func TestNewRejectsAHeaderThatWouldSplitTheRequest(t *testing.T) {
+	for name, header := range map[string]struct{ name, value string }{
+		"crlf in value": {"X-Trace", "abc\r\nX-Injected: yes"},
+		"bare lf":       {"X-Trace", "abc\nX-Injected: yes"},
+		"nul in value":  {"X-Trace", "abc\x00def"},
+		"crlf in name":  {"X-Bad\r\nX-Injected", "yes"},
+		"space in name": {"X Trace", "yes"},
+		"empty name":    {"", "yes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := panmail.New("https://mail.example.com", "k", panmail.WithHeader(header.name, header.value))
+			if err == nil {
+				t.Fatalf("New accepted %q: %q", header.name, header.value)
+			}
+		})
+	}
+
+	// A tab is legal in a header value and stays legal.
+	if _, err := panmail.New("https://mail.example.com", "k", panmail.WithHeader("X-Trace", "a\tb")); err != nil {
+		t.Errorf("New rejected an ordinary header: %v", err)
+	}
+}

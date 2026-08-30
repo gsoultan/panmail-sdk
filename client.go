@@ -48,10 +48,15 @@ func New(baseURL, apiKey string, opts ...Option) (*Client, error) {
 		return nil, errors.New("panmail: an api key is required")
 	}
 
+	opt := newOptions(opts)
+	if err := validateHeaders(opt.headers); err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		endpoint: strings.TrimRight(baseURL, "/") + sendProcedure,
 		apiKey:   apiKey,
-		opts:     newOptions(opts),
+		opts:     opt,
 	}, nil
 }
 

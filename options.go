@@ -1,6 +1,7 @@
 package panmail
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -60,6 +61,11 @@ func WithRateLimitRetries(n int) Option {
 // WithHeader sets an extra HTTP header on every request — a tracing header, or
 // whatever a proxy in front of the gateway requires.
 //
+// The name and value are checked by New, which refuses a value carrying a
+// carriage return or newline. Those end a header line, so a value holding one
+// is a second header the caller did not write — and a tracing header is
+// exactly the kind that gets built out of something a user supplied.
+//
 // The API key header is not settable this way: it is what New's apiKey
 // argument is for, and a second source for it would only make a mismatch
 // possible.
@@ -99,6 +105,43 @@ func newOptions(opts []Option) options {
 		}
 	}
 	return resolved
+}
+
+// validateHeaders refuses a header that would not survive being written to the
+// wire as written.
+//
+// net/http would refuse it too, but only at send time and as a transport error
+// — the one error this client never retries and reports as an unknown outcome.
+// A header that cannot be sent is knowable when the client is built, and a
+// caller would rather learn about it there than on the first send.
+func validateHeaders(headers map[string]string) error {
+	for name, value := range headers {
+		if name == "" {
+			return errors.New("panmail: a header name cannot be empty")
+		}
+		if i := strings.IndexFunc(name, func(r rune) bool { return !isToken(r) }); i >= 0 {
+			return fmt.Errorf("panmail: header name %q contains a character a header name may not", name)
+		}
+		if i := strings.IndexFunc(value, isControl); i >= 0 {
+			return fmt.Errorf("panmail: the value of header %q contains a control character at byte %d; "+
+				"a carriage return or newline there would add a header of its own", name, i)
+		}
+	}
+	return nil
+}
+
+// isToken reports whether r may appear in a header name. The set is RFC 9110's
+// token, which is what a name is.
+func isToken(r rune) bool {
+	return strings.ContainsRune("!#$%&'*+-.^_`|~", r) ||
+		(r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
+}
+
+// isControl reports whether r may not appear in a header value. Tab is allowed
+// because a header value may legitimately contain one; nothing else below
+// space may, and CR and LF are the two that end the line.
+func isControl(r rune) bool {
+	return (r < 0x20 && r != '\t') || r == 0x7f
 }
 
 // refuseRedirect stops a redirect being followed.

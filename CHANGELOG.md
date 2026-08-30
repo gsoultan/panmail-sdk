@@ -10,6 +10,22 @@ The four language packages share a version number and are released together.
 
 ### Security
 
+- **The PHP client was vulnerable to CRLF header injection.** `CurlTransport`
+  built each header line by joining the name and value with a colon, so a
+  carriage return or newline in a caller-supplied header value ended the line
+  early and everything after it became a header of its own. An application
+  passing user-controlled data into a tracing or correlation header could have
+  arbitrary headers added to its request. Reproduced against a real socket:
+  `['X-Trace' => "abc\r\nX-Injected: yes"]` arrived at the server as two
+  headers.
+
+  Go and Node were not injectable — `net/http` and undici both refuse the
+  value — and Java was not either, but threw `IllegalArgumentException`, which
+  is outside the hierarchy its own documentation tells callers to catch. All
+  four now validate header names and values when the client is constructed, so
+  the failure is the same shape, with the same type, at the same point, in
+  every language.
+
 - **The API key is no longer forwarded across an HTTP redirect.** The key
   travels in `X-API-Key`, and a custom header is not on any HTTP client's list
   of credentials to drop when a redirect crosses to another host — that list

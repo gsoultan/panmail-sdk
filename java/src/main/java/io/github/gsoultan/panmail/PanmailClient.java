@@ -134,6 +134,7 @@ public final class PanmailClient {
         this.apiKey = builder.apiKey;
         this.timeout = builder.timeout;
         this.rateLimitRetries = Math.max(0, builder.rateLimitRetries);
+        validateHeaders(builder.headers);
         this.headers = Map.copyOf(builder.headers);
         if (builder.httpClient != null) {
             // X-API-Key is a header java.net.http has never heard of, so it is
@@ -305,6 +306,39 @@ public final class PanmailClient {
         }
 
         return new ApiException("panmail: " + code + ": " + message, code, status);
+    }
+
+    /**
+     * Refuses a header that would not survive being written to the wire as
+     * written.
+     *
+     * {@code HttpRequest.Builder} would refuse it too, but at send time and
+     * with an {@link IllegalArgumentException} — outside the hierarchy every
+     * other refusal from this client belongs to, so a caller catching
+     * {@link PanmailException} would not catch it. A header that cannot be sent
+     * is knowable when the client is built.
+     */
+    private static void validateHeaders(Map<String, String> headers) {
+        for (Map.Entry<String, String> header : headers.entrySet()) {
+            String name = header.getKey();
+            // RFC 9110's token, which is what a header name is.
+            if (name == null || !name.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")) {
+                throw new InvalidMessageException(
+                        "panmail: \"" + name + "\" is not a header name");
+            }
+            String value = header.getValue() == null ? "" : header.getValue();
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                // Tab is allowed; nothing else below space is, and CR and LF
+                // are the two that end the line.
+                if ((c < 0x20 && c != '\t') || c == 0x7f) {
+                    throw new InvalidMessageException(
+                            "panmail: the value of header \"" + name + "\" contains a control "
+                                    + "character at index " + i + "; a carriage return or newline "
+                                    + "there would add a header of its own");
+                }
+            }
+        }
     }
 
     private static URI validateBaseUrl(String baseUrl) {

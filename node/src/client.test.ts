@@ -424,3 +424,31 @@ describe('the shared content-type fixture', () => {
     });
   }
 });
+
+// A carriage return or newline ends a header line, so a value carrying one is
+// a second header the caller never wrote. fetch refuses to send it, but only
+// at send time and as a TransportError — the one failure this client reports
+// as an unknown outcome, when in truth nothing was sent. The constructor
+// refuses it instead.
+describe('headers that would split the request', () => {
+  const bad: Array<[string, string, string]> = [
+    ['crlf in value', 'X-Trace', 'abc\r\nX-Injected: yes'],
+    ['bare lf', 'X-Trace', 'abc\nX-Injected: yes'],
+    ['nul in value', 'X-Trace', 'abc\u0000def'],
+    ['crlf in name', 'X-Bad\r\nX-Injected', 'yes'],
+    ['space in name', 'X Trace', 'yes'],
+    ['empty name', '', 'yes'],
+  ];
+
+  for (const [label, name, value] of bad) {
+    test(`${label} is refused`, () => {
+      expect(() => new PanmailClient(BASE, 'k', { headers: { [name]: value } })).toThrow(
+        InvalidMessageError,
+      );
+    });
+  }
+
+  test('a tab is legal in a header value and stays legal', () => {
+    expect(() => new PanmailClient(BASE, 'k', { headers: { 'X-Trace': 'a\tb' } })).not.toThrow();
+  });
+});

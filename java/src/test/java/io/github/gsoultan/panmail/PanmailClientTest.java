@@ -29,6 +29,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -574,6 +575,42 @@ class PanmailClientTest {
                 .build());
 
         assertEquals(expected, bodies.get(0).path("attachments").get(0).path("contentType").asText());
+    }
+
+    static Stream<Arguments> headersThatWouldSplitTheRequest() {
+        return Stream.of(
+                Arguments.of("crlf in value", "X-Trace", "abc\r\nX-Injected: yes"),
+                Arguments.of("bare lf", "X-Trace", "abc\nX-Injected: yes"),
+                Arguments.of("nul in value", "X-Trace", "abc\u0000def"),
+                Arguments.of("crlf in name", "X-Bad\r\nX-Injected", "yes"),
+                Arguments.of("space in name", "X Trace", "yes"),
+                Arguments.of("empty name", "", "yes"));
+    }
+
+    /**
+     * A carriage return or newline ends a header line, so a value carrying one
+     * is a second header the caller never wrote. HttpRequest.Builder refuses to
+     * send it, but with an IllegalArgumentException at send time — outside the
+     * hierarchy every other refusal belongs to, so a caller catching
+     * PanmailException would not catch it.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("headersThatWouldSplitTheRequest")
+    void aHeaderThatWouldSplitTheRequestIsRefused(String label, String name, String value) {
+        assertThrows(InvalidMessageException.class, () -> PanmailClient.builder()
+                .baseUrl("https://mail.example.com")
+                .apiKey("k")
+                .header(name, value)
+                .build());
+    }
+
+    @Test
+    void aTabIsLegalInAHeaderValueAndStaysLegal() {
+        assertDoesNotThrow(() -> PanmailClient.builder()
+                .baseUrl("https://mail.example.com")
+                .apiKey("k")
+                .header("X-Trace", "a\tb")
+                .build());
     }
 
 }

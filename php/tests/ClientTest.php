@@ -525,4 +525,39 @@ final class ClientTest extends TestCase
         );
     }
 
+    /** @return iterable<string, array{string, string}> */
+    public static function headersThatWouldSplitTheRequest(): iterable
+    {
+        yield 'crlf in value' => ['X-Trace', "abc\r\nX-Injected: yes"];
+        yield 'bare lf' => ['X-Trace', "abc\nX-Injected: yes"];
+        yield 'nul in value' => ['X-Trace', "abc\x00def"];
+        yield 'crlf in name' => ["X-Bad\r\nX-Injected", 'yes'];
+        yield 'space in name' => ['X Trace', 'yes'];
+        yield 'empty name' => ['', 'yes'];
+    }
+
+    /**
+     * A carriage return or newline ends a header line, so a value carrying one
+     * is a second header the caller never wrote. CurlTransport joins the name
+     * and value with a colon and hands the result to cURL, which sends what it
+     * is given — this client is the only thing between a tracing header built
+     * from user input and a request nobody wrote.
+     */
+    #[DataProvider('headersThatWouldSplitTheRequest')]
+    public function testAHeaderThatWouldSplitTheRequestIsRefused(
+        string $name,
+        string $value
+    ): void {
+        $this->expectException(InvalidMessageException::class);
+
+        new Client(self::BASE, 'test-key', ['headers' => [$name => $value]]);
+    }
+
+    public function testATabIsLegalInAHeaderValueAndStaysLegal(): void
+    {
+        $client = new Client(self::BASE, 'test-key', ['headers' => ['X-Trace' => "a\tb"]]);
+
+        self::assertInstanceOf(Client::class, $client);
+    }
+
 }

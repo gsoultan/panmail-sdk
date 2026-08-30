@@ -112,6 +112,7 @@ final class Client
                 unset($headers[$name]);
             }
         }
+        self::validateHeaders($headers);
         $headers[self::API_KEY_HEADER] = $apiKey;
         $headers['Content-Type'] = 'application/json';
         $this->headers = $headers;
@@ -278,6 +279,38 @@ final class Client
             $code,
             $status
         );
+    }
+
+    /**
+     * Refuses a header that would not survive being written to the wire as
+     * written.
+     *
+     * CurlTransport builds a header line by joining the name and value with a
+     * colon, so a carriage return or newline in either ends the line early and
+     * everything after it becomes a header of its own. A tracing header built
+     * out of something a user supplied is exactly where that turns into a
+     * request the caller did not write.
+     *
+     * @param array<string, string> $headers
+     */
+    private static function validateHeaders(array $headers): void
+    {
+        foreach ($headers as $name => $value) {
+            $name = (string) $name;
+            if ($name === '' || preg_match('/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/', $name) !== 1) {
+                throw new InvalidMessageException(
+                    "panmail: \"$name\" is not a header name"
+                );
+            }
+            // Tab is allowed; nothing else below space is, and CR and LF are
+            // the two that end the line.
+            if (preg_match('/[\x00-\x08\x0a-\x1f\x7f]/', $value) === 1) {
+                throw new InvalidMessageException(
+                    "panmail: the value of header \"$name\" contains a control character; "
+                    . 'a carriage return or newline there would add a header of its own'
+                );
+            }
+        }
     }
 
     private function validateBaseUrl(string $baseUrl): void
