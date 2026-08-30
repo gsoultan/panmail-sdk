@@ -24,7 +24,10 @@ export class InvalidMessageError extends PanmailError {}
 export class TransportError extends PanmailError {
   constructor(
     message: string,
-    readonly cause?: unknown,
+    // `override` because Error has carried a `cause` of its own since ES2022.
+    // Declaring one without saying so shadows it, and a reader cannot tell
+    // whether that was the intent or an accident.
+    override readonly cause?: unknown,
   ) {
     super(message);
   }

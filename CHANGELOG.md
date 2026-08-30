@@ -54,6 +54,14 @@ The four language packages share a version number and are released together.
 
 - Static analysis in CI: `golangci-lint` for Go and PHPStan for PHP, the latter
   at `max` on shipped code. Both earned their place on the first run.
+- Java compiles under `-Xlint:all -Werror`. It found seven exception classes
+  with no `serialVersionUID`: javac derives one from the shape of the class
+  when it is left out, so adding a field to an exception would stop a receiver
+  on an older version deserialising it.
+- Node: `noUnusedLocals`, `noUnusedParameters`, `noImplicitOverride`,
+  `noImplicitReturns` and `noFallthroughCasesInSwitch`. `noImplicitOverride`
+  found `TransportError` shadowing the `cause` that `Error` has carried since
+  ES2022 — it now says `override`, so a reader can tell it was deliberate.
 
 - `LICENSE` — MIT, which the three package manifests already declared.
 - `SECURITY.md`, `CONTRIBUTING.md`, this changelog, and `.editorconfig`.
