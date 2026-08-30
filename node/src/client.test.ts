@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, test } from 'bun:test';
 import { PanmailClient } from './client.js';
 import {
@@ -393,4 +395,32 @@ describe('redirects', () => {
       redirecting.close();
     }
   });
+});
+
+// The mapping all four clients share, read from one file rather than repeated
+// here. A change to one implementation that the others do not follow turns
+// three languages red instead of sending the gateway four different
+// Content-Type headers for the same attachment.
+describe('the shared content-type fixture', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('../../testdata/content-types.json', import.meta.url), 'utf8'),
+  ) as { types: Record<string, string> };
+
+  const extensions = Object.entries(fixture.types);
+  test('is not empty', () => {
+    expect(extensions.length).toBeGreaterThan(0);
+  });
+
+  for (const [extension, expected] of extensions) {
+    test(`.${extension} is sent as ${expected}`, async () => {
+      const g = gateway(accepted());
+
+      await client(g.fetch).send(
+        hello({ attachments: [{ filename: `attachment.${extension}`, content: 'x' }] }),
+      );
+
+      const attachments = g.calls[0]!.body.attachments as Array<{ contentType: string }>;
+      expect(attachments[0]!.contentType).toBe(expected);
+    });
+  }
 });

@@ -482,4 +482,47 @@ final class ClientTest extends TestCase
         self::assertSame('["a@example.net","c@example.net"]', $sent);
     }
 
+    /**
+     * The mapping all four clients share, read from one file rather than
+     * repeated here. A change to one implementation that the others do not
+     * follow turns three languages red instead of sending the gateway four
+     * different Content-Type headers for the same attachment.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function sharedContentTypes(): iterable
+    {
+        $raw = file_get_contents(__DIR__ . '/../../testdata/content-types.json');
+        if ($raw === false) {
+            self::fail('the shared fixture could not be read');
+        }
+
+        /** @var array{types: array<string, string>} $fixture */
+        $fixture = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        foreach ($fixture['types'] as $extension => $expected) {
+            yield ".$extension" => [$extension, $expected];
+        }
+    }
+
+    #[DataProvider('sharedContentTypes')]
+    public function testAttachmentContentTypesMatchTheSharedFixture(
+        string $extension,
+        string $expected
+    ): void {
+        $transport = new FakeTransport(self::accepted());
+
+        self::client($transport)->send(new Message(
+            providerId: 'p',
+            from: 'app@example.com',
+            to: ['user@example.net'],
+            text: 'hi',
+            attachments: [new Attachment("attachment.$extension", 'x')],
+        ));
+
+        self::assertSame(
+            $expected,
+            $transport->calls[0]['body']['attachments'][0]['contentType']
+        );
+    }
+
 }

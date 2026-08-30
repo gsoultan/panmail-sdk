@@ -7,10 +7,14 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -18,6 +22,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Spliterators;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
+import org.junit.jupiter.params.provider.Arguments;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
@@ -532,6 +540,40 @@ class PanmailClientTest {
         assertEquals(2, body.path("cc").size());
         assertEquals("cc-first@example.net", body.path("cc").get(0).asText());
         assertEquals("cc-second@example.net", body.path("cc").get(1).asText());
+    }
+
+    /**
+     * The mapping all four clients share, read from one file rather than
+     * repeated here. A change to one implementation that the others do not
+     * follow turns three languages red instead of sending the gateway four
+     * different Content-Type headers for the same attachment.
+     */
+    static Stream<Arguments> sharedContentTypes() throws IOException {
+        JsonNode fixture = MAPPER.readTree(
+                Files.readString(Path.of("..", "testdata", "content-types.json")));
+        JsonNode types = fixture.path("types");
+        assertTrue(types.size() > 0, "the shared fixture is empty");
+
+        return StreamSupport.stream(
+                        Spliterators.spliteratorUnknownSize(types.fieldNames(), 0), false)
+                .map(extension -> Arguments.of(extension, types.path(extension).asText()));
+    }
+
+    @ParameterizedTest(name = ".{0} is sent as {1}")
+    @MethodSource("sharedContentTypes")
+    void attachmentContentTypesMatchTheSharedFixture(String extension, String expected)
+            throws IOException {
+        accepts();
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to("user@example.net")
+                .text("hi")
+                .attach(new Attachment("attachment." + extension, "x"))
+                .build());
+
+        assertEquals(expected, bodies.get(0).path("attachments").get(0).path("contentType").asText());
     }
 
 }

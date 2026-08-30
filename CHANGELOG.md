@@ -52,6 +52,12 @@ The four language packages share a version number and are released together.
 
 ### Added
 
+- `testdata/content-types.json`: the extension-to-content-type mapping all four
+  clients guess from, written down once and read by all four test suites. The
+  four had already drifted on it — Go returned `text/csv; charset=utf-8` where
+  the others returned `text/csv` — and a per-language test for one extension
+  fixed that case without preventing the next. Changing the fixture now fails
+  Go, PHP, Java and Node together.
 - Static analysis in CI: `golangci-lint` for Go and PHPStan for PHP, the latter
   at `max` on shipped code. Both earned their place on the first run.
 - Java compiles under `-Xlint:all -Werror`. It found seven exception classes

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -589,5 +591,59 @@ func TestSendRefusesToFollowARedirect(t *testing.T) {
 	}
 	if leaked != "" {
 		t.Fatalf("the api key reached the redirect target: %q", leaked)
+	}
+}
+
+// contentTypeFixture is the mapping all four clients share. Reading it here
+// rather than repeating it means a change to one implementation that the
+// others do not follow turns three languages red.
+func contentTypeFixture(t *testing.T) map[string]string {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join("testdata", "content-types.json"))
+	if err != nil {
+		t.Fatalf("reading the shared fixture: %v", err)
+	}
+	var fixture struct {
+		Types map[string]string `json:"types"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parsing the shared fixture: %v", err)
+	}
+	if len(fixture.Types) == 0 {
+		t.Fatal("the shared fixture is empty")
+	}
+	return fixture.Types
+}
+
+// Go guesses from mime.TypeByExtension rather than a table of its own, so this
+// also pins that every extension the fixture names is one of Go's builtins. An
+// extension that is not would make the answer depend on the host's mime
+// database, and so on which machine the client happens to run.
+func TestAttachmentContentTypesMatchTheSharedFixture(t *testing.T) {
+	for extension, want := range contentTypeFixture(t) {
+		t.Run(extension, func(t *testing.T) {
+			g := accepts(t)
+
+			message := hello()
+			message.Attachments = []panmail.Attachment{
+				{Filename: "attachment." + extension, Content: []byte("x")},
+			}
+			if _, err := client(t, g).Send(context.Background(), message); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
+
+			attachments, ok := g.bodies[0]["attachments"].([]any)
+			if !ok || len(attachments) != 1 {
+				t.Fatalf("attachments = %#v", g.bodies[0]["attachments"])
+			}
+			sent, ok := attachments[0].(map[string]any)
+			if !ok {
+				t.Fatalf("attachment = %#v", attachments[0])
+			}
+			if got := sent["contentType"]; got != want {
+				t.Errorf("contentType for .%s = %v, want %v", extension, got, want)
+			}
+		})
 	}
 }

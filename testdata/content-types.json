@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "The content type each client guesses from a filename extension, and the",
+    "only place that mapping is written down for all four. Every client reads",
+    "this file in its own test suite, so a change to one implementation that",
+    "the others do not follow turns three languages red rather than shipping a",
+    "gateway four different Content-Type headers for the same attachment.",
+    "",
+    "The text types carry a charset. Go's mime package appends one to every",
+    "text/* it returns, and it is the better answer anyway: a text attachment",
+    "with no declared encoding is one the mail client has to guess at, and a",
+    "UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet.",
+    "",
+    "Every extension here is in Go's builtinTypesLower, so Go answers from its",
+    "own table rather than the host's mime database. Adding one that is not",
+    "would make the Go client's answer depend on which machine it runs on."
+  ],
+  "types": {
+    "pdf": "application/pdf",
+    "csv": "text/csv; charset=utf-8",
+    "txt": "text/plain; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+    "htm": "text/html; charset=utf-8",
+    "json": "application/json",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "svg": "image/svg+xml",
+    "zip": "application/zip",
+    "ics": "text/calendar; charset=utf-8"
+  }
+}

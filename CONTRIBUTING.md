@@ -47,6 +47,17 @@ why a rate limit is retried but a full queue is not, why redirects are refused.
 Match that: a future reader who does not know the gateway should be able to
 tell a deliberate choice from an accident.
 
+## What the four must agree on
+
+`testdata/content-types.json` is the extension-to-content-type mapping, and
+every client reads it in its own test suite. It exists because the four had
+already drifted on it once. If you add an extension, add it there — not to four
+tables — and check it is one Go's `mime` package knows natively, or the Go
+client's answer starts depending on the host's mime database.
+
+That is the pattern to reach for whenever the four have to agree on a value: a
+fixture all of them read beats four copies and a promise.
+
 ## The protos
 
 `proto/` is a verbatim copy of the gateway's, so the two cannot drift. Do not
