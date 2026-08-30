@@ -364,6 +364,16 @@ public final class PanmailClient {
             throw new InvalidMessageException(
                     "panmail: base url has no host: \"" + baseUrl + "\"");
         }
+        // Userinfo is deprecated in RFC 3986 for the reason it matters here:
+        // the url travels into every error this client reports, and an error
+        // is a thing that gets logged. The api key is the credential; if
+        // something in front of the gateway wants basic auth too, a header is
+        // where it goes.
+        if (parsed.getUserInfo() != null) {
+            throw new InvalidMessageException(
+                    "panmail: base url must not carry credentials; the api key authenticates "
+                            + "the send, and a password in the url ends up in logs");
+        }
         return URI.create(baseUrl.replaceAll("/+$", "") + SEND_PROCEDURE);
     }
 

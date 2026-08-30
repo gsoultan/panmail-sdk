@@ -674,3 +674,23 @@ func TestNewRejectsAHeaderThatWouldSplitTheRequest(t *testing.T) {
 		t.Errorf("New rejected an ordinary header: %v", err)
 	}
 }
+
+// A url carrying a password travels into every error this client reports, and
+// an error is a thing that gets logged. Node's fetch refuses such a url by
+// throwing a TypeError that quotes the whole thing, password included, so the
+// leak is real rather than theoretical — all four refuse it up front instead.
+func TestNewRejectsCredentialsInTheBaseURL(t *testing.T) {
+	for _, baseURL := range []string{
+		"https://user:hunter2@mail.example.com",
+		"https://user@mail.example.com",
+	} {
+		_, err := panmail.New(baseURL, "k")
+		if err == nil {
+			t.Errorf("New accepted %q", baseURL)
+			continue
+		}
+		if strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("the password is in the error: %v", err)
+		}
+	}
+}

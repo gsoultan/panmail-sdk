@@ -236,6 +236,17 @@ function validateBaseUrl(baseUrl: string): void {
   if (!parsed.host) {
     throw new InvalidMessageError(`panmail: base url has no host: "${baseUrl}"`);
   }
+  // Userinfo is deprecated in RFC 3986 for the reason it matters here. undici
+  // refuses such a url anyway, but it does so by throwing a TypeError that
+  // quotes the whole url — password included — which this client would then
+  // put in the message of a TransportError, which is a thing that gets logged.
+  // The api key is the credential; a proxy wanting basic auth gets a header.
+  if (parsed.username !== '' || parsed.password !== '') {
+    throw new InvalidMessageError(
+      'panmail: base url must not carry credentials; the api key authenticates the send, ' +
+        'and a password in the url ends up in logs',
+    );
+  }
 }
 
 /**

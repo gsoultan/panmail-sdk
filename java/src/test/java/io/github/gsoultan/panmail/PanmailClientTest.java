@@ -31,6 +31,7 @@ import java.util.function.BiConsumer;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -611,6 +612,21 @@ class PanmailClientTest {
                 .apiKey("k")
                 .header("X-Trace", "a\tb")
                 .build());
+    }
+
+    /**
+     * A url carrying a password travels into every error this client reports,
+     * and an error is a thing that gets logged.
+     */
+    @Test
+    void credentialsInTheBaseUrlAreRefused() {
+        for (String baseUrl : List.of(
+                "https://user:hunter2@mail.example.com", "https://user@mail.example.com")) {
+            InvalidMessageException thrown = assertThrows(InvalidMessageException.class,
+                    () -> PanmailClient.builder().baseUrl(baseUrl).apiKey("k").build(),
+                    baseUrl + " was accepted");
+            assertFalse(thrown.getMessage().contains("hunter2"), thrown.getMessage());
+        }
     }
 
 }

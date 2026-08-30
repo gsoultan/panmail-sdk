@@ -10,6 +10,13 @@ The four language packages share a version number and are released together.
 
 ### Security
 
+- **A base URL carrying credentials is now refused by all four.** The URL
+  travels into every error the client reports, and errors get logged. Node
+  leaked a password that way: undici refuses such a URL, but by throwing a
+  `TypeError` quoting the whole URL, which the client put in a
+  `TransportError` message. Go redacted it, Java and PHP accepted it silently —
+  three different answers to one question. Userinfo is deprecated in RFC 3986
+  for this exact reason.
 - **The PHP client was vulnerable to CRLF header injection.** `CurlTransport`
   built each header line by joining the name and value with a colon, so a
   carriage return or newline in a caller-supplied header value ended the line

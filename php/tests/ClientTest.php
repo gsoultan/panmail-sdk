@@ -560,4 +560,17 @@ final class ClientTest extends TestCase
         self::assertInstanceOf(Client::class, $client);
     }
 
+    /**
+     * A url carrying a password travels into every error this client reports,
+     * and an error is a thing that gets logged.
+     */
+    public function testCredentialsInTheBaseUrlAreRefused(): void
+    {
+        try {
+            new Client('https://user:hunter2@mail.example.com', 'k');
+            self::fail('the base url was accepted');
+        } catch (InvalidMessageException $refusal) {
+            self::assertStringNotContainsString('hunter2', $refusal->getMessage());
+        }
+    }
 }

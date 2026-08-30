@@ -452,3 +452,21 @@ describe('headers that would split the request', () => {
     expect(() => new PanmailClient(BASE, 'k', { headers: { 'X-Trace': 'a\tb' } })).not.toThrow();
   });
 });
+
+// A url carrying a password travels into every error this client reports, and
+// an error is a thing that gets logged. undici refuses such a url anyway, but
+// by throwing a TypeError that quotes the whole thing — password included.
+describe('credentials in the base url', () => {
+  for (const baseUrl of ['https://user:hunter2@mail.example.com', 'https://user@mail.example.com']) {
+    test(`${baseUrl} is refused`, () => {
+      let thrown: unknown;
+      try {
+        new PanmailClient(baseUrl, 'k');
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(InvalidMessageError);
+      expect(String((thrown as Error).message)).not.toContain('hunter2');
+    });
+  }
+});

@@ -36,6 +36,13 @@ response is a message id and a status; anything approaching that size is a
 proxy's error page, and buffering it is how a misbehaving intermediary turns
 into an out-of-memory error in your process.
 
+**The base URL cannot carry credentials.** `https://user:pass@gateway` is
+refused by all four. The URL travels into every error the client reports, and
+an error is a thing that gets logged — Node's `fetch` refuses such a URL anyway,
+but by throwing a `TypeError` that quotes the whole thing, password included.
+The API key authenticates the send; if something in front of the gateway wants
+basic auth as well, set the header explicitly.
+
 **A header cannot be made to carry a second header.** A carriage return or
 newline ends a header line, so a value holding one is an extra header the
 caller never wrote — and a tracing or correlation header built out of something
