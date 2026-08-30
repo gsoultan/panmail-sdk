@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    // What a Node consumer has. The published declarations need it — see
+    // the optional peer dependency in package.json.
+    "types": ["node"],
+    "strict": true,
+    // Deliberately not skipped: checking the published .d.ts is the entire
+    // point, and skipLibCheck would suppress exactly the errors worth finding.
+    "skipLibCheck": false,
+    "noEmit": true
+  },
+  "include": ["use.ts"]
+}

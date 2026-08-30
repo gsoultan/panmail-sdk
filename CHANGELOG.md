@@ -63,6 +63,12 @@ The four language packages share a version number and are released together.
   `dist/` that npm publishes.
 - `.github/dependabot.yml`, watching the GitHub Actions most closely — they are
   the dependency with access to a release.
+- Node: `consumer/` compiles against the published `dist/*.d.ts` with
+  `skipLibCheck` off, which is the only check that sees the API as a consumer
+  does — the ordinary typecheck reads `src/`. It caught that the declarations
+  reference `fetch`, `Headers` and `ReadableStream`, ambient types the package
+  does not ship; `@types/node` is now declared as an optional peer dependency
+  rather than left to be discovered on install.
 - Node: `smoke.mjs` runs the built package on a real Node across the range
   `engines` declares. The suite runs under bun, which is not Node — it has its
   own fetch, streams and globals — so nothing was checking that the package

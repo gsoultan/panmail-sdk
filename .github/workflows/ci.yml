@@ -108,6 +108,11 @@ jobs:
       # dist/ is what npm publishes and is not in the repository, so a build
       # that only breaks at publish time would break it in front of a release.
       - run: bun run build
+      # The declarations in dist/ are the API as a consumer sees it, and the
+      # typecheck above never looks at them — it checks src/. This compiles a
+      # consumer against dist/ with skipLibCheck off, which is the only way an
+      # unusable published type shows up before someone installs it.
+      - run: bun run check:types
 
   # The suite above runs under bun, which is not Node: it has its own fetch,
   # its own streams and its own idea of what is global. package.json promises

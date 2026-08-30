@@ -24,7 +24,7 @@ go test -race ./...
 (cd php  && composer test)
 (cd java && mvn --batch-mode test)
 (cd node && bun x tsc -p tsconfig.json --noEmit && bun test src)
-(cd node && bun run build && bun run smoke)
+(cd node && bun run build && bun run smoke && bun run check:types)
 ```
 
 The last one is not the same as the one above it. The suite runs under bun;

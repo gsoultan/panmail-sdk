@@ -41,11 +41,20 @@
     "test": "bun test src",
     "smoke": "node smoke.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:types": "tsc -p consumer/tsconfig.json",
     "prepublishOnly": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
     "@types/node": "^26.3.0"
+  },
+  "peerDependencies": {
+    "@types/node": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@types/node": {
+      "optional": true
+    }
   },
   "sideEffects": false,
   "publishConfig": {
