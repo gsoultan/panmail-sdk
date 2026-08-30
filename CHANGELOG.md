@@ -52,6 +52,9 @@ The four language packages share a version number and are released together.
 
 ### Added
 
+- `scripts/check.sh` runs everything CI runs, for whichever of the four
+  toolchains are installed, and lists what it skipped rather than letting a
+  partial run look complete.
 - `testdata/content-types.json`: the extension-to-content-type mapping all four
   clients guess from, written down once and read by all four test suites. The
   four had already drifted on it — Go returned `text/csv; charset=utf-8` where

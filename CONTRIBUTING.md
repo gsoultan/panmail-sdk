@@ -18,6 +18,14 @@ in every language, so a gap in one is visible next to the other three.
 Before opening a pull request:
 
 ```sh
+./scripts/check.sh     # everything below, for whichever toolchains you have
+```
+
+It skips what is not installed and says so at the end, because nobody has all
+four to hand and a green run that quietly covered two of them is worse than no
+run at all. The individual commands, if you want one of them on its own:
+
+```sh
 gofmt -l .            # must print nothing
 go vet ./...
 go test -race ./...
