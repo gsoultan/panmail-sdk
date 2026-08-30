@@ -42,16 +42,22 @@ final class Attachment
 
         return match ($extension) {
             'pdf' => 'application/pdf',
-            'csv' => 'text/csv',
-            'txt' => 'text/plain',
-            'html', 'htm' => 'text/html',
+            // The text types carry a charset, because Go's mime package appends
+            // one to every text/* it returns and four clients of one gateway
+            // should not disagree about a header. It is also the better answer:
+            // a text attachment with no declared encoding is one the mail
+            // client has to guess at, and a UTF-8 CSV guessed as latin-1 is
+            // mojibake in a spreadsheet.
+            'csv' => 'text/csv; charset=utf-8',
+            'txt' => 'text/plain; charset=utf-8',
+            'html', 'htm' => 'text/html; charset=utf-8',
             'json' => 'application/json',
             'png' => 'image/png',
             'jpg', 'jpeg' => 'image/jpeg',
             'gif' => 'image/gif',
             'svg' => 'image/svg+xml',
             'zip' => 'application/zip',
-            'ics' => 'text/calendar',
+            'ics' => 'text/calendar; charset=utf-8',
             default => 'application/octet-stream',
         };
     }

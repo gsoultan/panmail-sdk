@@ -10,6 +10,8 @@ import java.time.Duration;
  */
 public class RateLimitedException extends ApiException {
 
+    private static final long serialVersionUID = 1L;
+
     private final Duration retryAfter;
 
     public RateLimitedException(String message, Duration retryAfter, String code, int status) {

@@ -135,6 +135,19 @@ describe('send', () => {
     expect(attachments[0]!.contentType).toBe('application/pdf');
   });
 
+  // A UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet. All four
+  // clients send the same header for the same file.
+  test('text attachments declare their charset', async () => {
+    const g = gateway(accepted());
+
+    await client(g.fetch).send(
+      hello({ attachments: [{ filename: 'report.csv', content: 'a,b\n1,2' }] }),
+    );
+
+    const attachments = g.calls[0]!.body.attachments as Array<Record<string, string>>;
+    expect(attachments[0]!.contentType).toBe('text/csv; charset=utf-8');
+  });
+
   test('refuses bad messages without calling the gateway', async () => {
     const g = gateway(accepted());
     const c = client(g.fetch);

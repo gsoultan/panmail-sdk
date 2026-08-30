@@ -8,6 +8,8 @@ package io.github.gsoultan.panmail;
  */
 public class TransportException extends PanmailException {
 
+    private static final long serialVersionUID = 1L;
+
     public TransportException(String message, Throwable cause) {
         super(message, cause);
     }

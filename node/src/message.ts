@@ -98,10 +98,15 @@ export interface Message {
 
 const CONTENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
-  csv: 'text/csv',
-  txt: 'text/plain',
-  html: 'text/html',
-  htm: 'text/html',
+  // The text types carry a charset, because Go's mime package appends one to
+  // every text/* it returns and four clients of one gateway should not disagree
+  // about a header. It is also the better answer: a text attachment with no
+  // declared encoding is one the mail client has to guess at, and a UTF-8 CSV
+  // guessed as latin-1 is mojibake in a spreadsheet.
+  csv: 'text/csv; charset=utf-8',
+  txt: 'text/plain; charset=utf-8',
+  html: 'text/html; charset=utf-8',
+  htm: 'text/html; charset=utf-8',
   json: 'application/json',
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -109,7 +114,7 @@ const CONTENT_TYPES: Record<string, string> = {
   gif: 'image/gif',
   svg: 'image/svg+xml',
   zip: 'application/zip',
-  ics: 'text/calendar',
+  ics: 'text/calendar; charset=utf-8',
 };
 
 function guessContentType(filename: string): string {

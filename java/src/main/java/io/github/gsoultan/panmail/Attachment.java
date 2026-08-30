@@ -10,10 +10,16 @@ public final class Attachment {
 
     private static final Map<String, String> CONTENT_TYPES = Map.ofEntries(
             Map.entry("pdf", "application/pdf"),
-            Map.entry("csv", "text/csv"),
-            Map.entry("txt", "text/plain"),
-            Map.entry("html", "text/html"),
-            Map.entry("htm", "text/html"),
+            // The text types carry a charset, because Go's mime package appends
+            // one to every text/* it returns and four clients of one gateway
+            // should not disagree about a header. It is also the better answer:
+            // a text attachment with no declared encoding is one the mail client
+            // has to guess at, and a UTF-8 CSV guessed as latin-1 is mojibake in
+            // a spreadsheet.
+            Map.entry("csv", "text/csv; charset=utf-8"),
+            Map.entry("txt", "text/plain; charset=utf-8"),
+            Map.entry("html", "text/html; charset=utf-8"),
+            Map.entry("htm", "text/html; charset=utf-8"),
             Map.entry("json", "application/json"),
             Map.entry("png", "image/png"),
             Map.entry("jpg", "image/jpeg"),
@@ -21,7 +27,7 @@ public final class Attachment {
             Map.entry("gif", "image/gif"),
             Map.entry("svg", "image/svg+xml"),
             Map.entry("zip", "application/zip"),
-            Map.entry("ics", "text/calendar"));
+            Map.entry("ics", "text/calendar; charset=utf-8"));
 
     private final String filename;
     private final byte[] content;

@@ -202,6 +202,24 @@ class PanmailClientTest {
                         StandardCharsets.UTF_8));
     }
 
+    // A UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet. All four
+    // clients send the same header for the same file.
+    @Test
+    void textAttachmentsDeclareTheirCharset() throws IOException {
+        accepts();
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to("user@example.net")
+                .text("hi")
+                .attach(new Attachment("report.csv", "a,b\n1,2"))
+                .build());
+
+        JsonNode attachment = bodies.get(0).path("attachments").get(0);
+        assertEquals("text/csv; charset=utf-8", attachment.path("contentType").asText());
+    }
+
     @Test
     void sendRejectsBadMessagesWithoutCallingTheGateway() throws IOException {
         accepts();

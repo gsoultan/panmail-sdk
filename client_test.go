@@ -224,6 +224,27 @@ func TestSendBase64EncodesAttachmentContent(t *testing.T) {
 	}
 }
 
+// A text attachment with no declared encoding is one the mail client has to
+// guess at, and a UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet.
+// Go's mime package appends the charset; the other three clients hard-code it
+// so that all four send the same header for the same file.
+func TestTextAttachmentsDeclareTheirCharset(t *testing.T) {
+	g := accepts(t)
+
+	msg := hello()
+	msg.Attachments = []panmail.Attachment{{Filename: "report.csv", Content: []byte("a,b\n1,2")}}
+
+	if _, err := client(t, g).Send(context.Background(), msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	attachments, _ := g.bodies[0]["attachments"].([]any)
+	attachment, _ := attachments[0].(map[string]any)
+	if got, _ := attachment["contentType"].(string); got != "text/csv; charset=utf-8" {
+		t.Errorf("contentType = %q, want text/csv; charset=utf-8", got)
+	}
+}
+
 func TestSendRejectsBadMessagesWithoutCallingTheGateway(t *testing.T) {
 	g := accepts(t)
 	c := client(t, g)

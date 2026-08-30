@@ -149,6 +149,24 @@ final class ClientTest extends TestCase
         self::assertSame('%PDF-1.4', base64_decode($attachment['content'], true));
     }
 
+    // A UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet. All four
+    // clients send the same header for the same file.
+    public function testTextAttachmentsDeclareTheirCharset(): void
+    {
+        $transport = new FakeTransport(self::accepted());
+
+        self::client($transport)->send(new Message(
+            providerId: 'prov',
+            from: 'app@example.com',
+            to: ['user@example.net'],
+            text: 'hi',
+            attachments: [new Attachment('report.csv', "a,b\n1,2")],
+        ));
+
+        $attachment = $transport->calls[0]['body']['attachments'][0];
+        self::assertSame('text/csv; charset=utf-8', $attachment['contentType']);
+    }
+
     /** @return array<string, array{Message}> */
     public static function badMessages(): array
     {

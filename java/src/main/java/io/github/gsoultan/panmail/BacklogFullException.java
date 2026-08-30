@@ -11,6 +11,8 @@ package io.github.gsoultan.panmail;
  */
 public class BacklogFullException extends ApiException {
 
+    private static final long serialVersionUID = 1L;
+
     public BacklogFullException(String message, String code, int status) {
         super(message, code, status);
     }

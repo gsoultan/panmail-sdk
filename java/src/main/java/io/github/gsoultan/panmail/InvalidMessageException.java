@@ -9,6 +9,8 @@ package io.github.gsoultan.panmail;
  */
 public class InvalidMessageException extends PanmailException {
 
+    private static final long serialVersionUID = 1L;
+
     public InvalidMessageException(String message) {
         super(message);
     }
