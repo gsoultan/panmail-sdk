@@ -1,0 +1,12 @@
+# The shipped code, at the strictest level PHPStan has.
+#
+# It earns its place: it found classify() casting a mixed to string, which a
+# gateway answering {"code":{...}} turned into "Array to string conversion" and
+# an error message reading "panmail: Array: Array". It also flagged the
+# array_values calls in Message as redundant, which was PHPStan believing a
+# @param list<string> the signature never enforced — the annotation was wrong,
+# not the code.
+parameters:
+    level: max
+    paths:
+        - src

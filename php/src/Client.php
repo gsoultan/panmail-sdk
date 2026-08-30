@@ -219,8 +219,12 @@ final class Client
 
         $decoded = json_decode($payload, true);
         if (is_array($decoded)) {
-            $code = (string) ($decoded['code'] ?? '');
-            $message = (string) ($decoded['message'] ?? '');
+            // Through self::text for the same reason the send result is: a
+            // structured value where a scalar belongs raises "Array to string
+            // conversion" mid-cast and leaves the caller holding the word
+            // "Array" instead of a reason.
+            $code = self::text($decoded['code'] ?? '');
+            $message = self::text($decoded['message'] ?? '');
         }
         if ($message === '') {
             $message = trim($payload);

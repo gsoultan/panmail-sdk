@@ -21,9 +21,12 @@ final class Message
      *                                         out through, because the wrong guess is a message
      *                                         sent from the wrong domain.
      * @param string             $from         Must be an address the provider is authorised to send as.
-     * @param list<string>       $to
-     * @param list<string>       $cc
-     * @param list<string>       $bcc
+     * @param array<string>      $to  Keys are ignored: the wire form is a JSON
+     *                                array, and array_values below is what
+     *                                guarantees that after a caller has
+     *                                array_filter'd a list and left holes in it
+     * @param array<string>      $cc
+     * @param array<string>      $bcc
      * @param string             $html         Send both bodies when you can: a text part is what
      *                                         recipients with images off, screen readers and spam
      *                                         filters read.

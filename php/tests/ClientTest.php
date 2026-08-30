@@ -413,4 +413,55 @@ final class ClientTest extends TestCase
         self::assertSame(Status::PENDING, $result->status);
     }
 
+    /**
+     * The same hazard as the send result, on the refusal path: a structured
+     * value where a scalar belongs raises "Array to string conversion" and
+     * leaves the caller holding the word "Array" instead of a reason. phpunit
+     * is configured to fail on that warning, so this test fails twice over
+     * without the guard.
+     */
+    public function testAStructuredRefusalEnvelopeDoesNotRaiseAWarning(): void
+    {
+        $payload = '{"code":{"nested":true},"message":{"also":"structured"}}';
+        $transport = new FakeTransport(new Response(400, [], $payload));
+
+        try {
+            self::client($transport)->send(self::hello());
+            self::fail('the refusal was not raised');
+        } catch (ApiException $refusal) {
+            self::assertSame('', $refusal->connectCode);
+            self::assertStringNotContainsString('Array', $refusal->getMessage());
+            // Nothing usable was in the envelope, so the body itself is the
+            // most informative thing left to report.
+            self::assertStringContainsString($payload, $refusal->getMessage());
+        }
+    }
+
+    /**
+     * Recipients go on the wire as a JSON array, and array_filter is the
+     * ordinary way a caller ends up holding a non-list: it preserves keys, so
+     * dropping one recipient leaves holes. Encoded as-is that becomes a JSON
+     * object, which is not what the gateway is expecting.
+     */
+    public function testFilteredRecipientsStillTravelAsAJsonArray(): void
+    {
+        $transport = new FakeTransport(self::accepted());
+        $kept = array_filter(
+            ['a@example.net', 'b@example.net', 'c@example.net'],
+            static fn (string $address): bool => $address !== 'b@example.net'
+        );
+        // The holes are the point: keys 0 and 2, no key 1.
+        self::assertSame([0, 2], array_keys($kept), 'the fixture has stopped being a non-list');
+
+        self::client($transport)->send(new Message(
+            providerId: 'p',
+            from: 'app@example.com',
+            to: $kept,
+            text: 'hi',
+        ));
+
+        $sent = json_encode($transport->calls[0]['body']['to']);
+        self::assertSame('["a@example.net","c@example.net"]', $sent);
+    }
+
 }

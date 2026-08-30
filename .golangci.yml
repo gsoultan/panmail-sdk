@@ -1,0 +1,52 @@
+version: "2"
+
+# The default set plus the ones that matter for a client library: unchecked
+# errors, shadowed context misuse, and the security rules. Style linters are
+# left out — gofmt already settles that, and the comments here are prose that a
+# line-length rule would only make worse.
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - errorlint
+    - gosec
+    - noctx
+    - nilerr
+    - unconvert
+    - usestdlibvars
+
+  settings:
+    errcheck:
+      # A type assertion that fails panics, so the comma-ok form is worth
+      # insisting on. check-blank is deliberately left off: `_ =` is how Go
+      # says "considered, and genuinely does not matter", and the drain-and-
+      # close in post() means it. Flagging that leaves no way to say it.
+      check-type-assertions: true
+    gosec:
+      excludes:
+        # G107 flags a non-constant URL in an http request. POSTing to a URL
+        # the caller supplies is the entire purpose of this package, and New
+        # validates it before it is ever used.
+        - G107
+
+  exclusions:
+    rules:
+      # G101 reads a constant whose name contains "key" as a hardcoded
+      # credential. This one is the name of a header. The value it carries is
+      # the apiKey argument, which comes from the caller.
+      - linters:
+          - gosec
+        source: 'apiKeyHeader = '
+
+      # A test drives the client through the exported surface and deliberately
+      # ignores what it is not asserting on.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+          - noctx
+          - gosec

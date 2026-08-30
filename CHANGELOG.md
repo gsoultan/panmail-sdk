@@ -20,6 +20,17 @@ The four language packages share a version number and are released together.
 
 ### Fixed
 
+- **PHP: a refusal whose `code` or `message` was structured rather than a
+  string raised "Array to string conversion" twice and left the caller holding
+  `panmail: Array: Array`.** `classify()` cast a `mixed` straight to string —
+  the same hazard already guarded on the send-result path, missed on the
+  refusal path. Found by PHPStan.
+- **PHP: the `@param list<string>` on `Message`'s recipients was not true.**
+  The signature takes any `array`, and `array_filter` — the ordinary way to
+  drop one recipient — returns a non-list. `array_values` was already
+  compensating; the annotation claimed a guarantee nothing enforced, which is
+  what made the call look redundant.
+
 - **Node: the timeout now covers the response body, not just the headers.**
   `fetch()` settles as soon as the response line arrives, and the abort timer
   was cleared at that point, so a gateway that sent headers and then stalled
@@ -40,6 +51,9 @@ The four language packages share a version number and are released together.
   failing later inside `HttpClient`.
 
 ### Added
+
+- Static analysis in CI: `golangci-lint` for Go and PHPStan for PHP, the latter
+  at `max` on shipped code. Both earned their place on the first run.
 
 - `LICENSE` — MIT, which the three package manifests already declared.
 - `SECURITY.md`, `CONTRIBUTING.md`, this changelog, and `.editorconfig`.

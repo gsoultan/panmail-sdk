@@ -21,7 +21,8 @@ Before opening a pull request:
 gofmt -l .            # must print nothing
 go vet ./...
 go test -race ./...
-(cd php  && composer test)
+golangci-lint run ./...
+(cd php  && composer test && composer analyse)
 (cd java && mvn --batch-mode test)
 (cd node && bun x tsc -p tsconfig.json --noEmit && bun test src)
 (cd node && bun run build && bun run smoke && bun run check:types)
@@ -76,3 +77,14 @@ number cannot be reused once a registry has it.
 Publishing needs these repository secrets: `NPM_TOKEN`,
 `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY`,
 `MAVEN_GPG_PASSPHRASE`.
+
+## Static analysis
+
+Go is linted by `golangci-lint` (config in `.golangci.yml`) and PHP by PHPStan,
+at `max` for `src` and a lower level for `tests` — a test reaching into a mixed
+from a decoded body is doing what a test should; shipped code is where mixed
+has to be pinned down.
+
+Both are configured to say why, not just what. If a rule is excluded there is a
+comment giving the reason, because the alternative is a future contributor
+deleting an exclusion nobody can defend, or keeping one that stopped applying.

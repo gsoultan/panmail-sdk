@@ -33,6 +33,21 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
 
+  # Not in the matrix above: the linter reads the source, not the toolchain, so
+  # running it once per Go version would say the same thing twice.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.23'
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          # Pinned so a new release cannot turn main red on a rule nobody
+          # chose. Dependabot proposes the bump; CI proves it on the PR.
+          version: v2.13.2
+
   php:
     runs-on: ubuntu-latest
     strategy:
@@ -58,6 +73,10 @@ jobs:
       - run: composer validate --strict --no-check-lock --no-check-publish
       - run: composer install --prefer-dist --no-progress
       - run: composer test
+      # PHPStan at max on src. It is the only thing standing between a mixed
+      # from a decoded JSON body and an "Array to string conversion" in front
+      # of a caller, which is exactly the bug it found in classify().
+      - run: composer analyse
 
   java:
     runs-on: ubuntu-latest

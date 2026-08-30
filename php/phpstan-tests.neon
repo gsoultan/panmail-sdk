@@ -1,0 +1,10 @@
+# The tests, at a level that catches mistakes without demanding perfect generic
+# annotations on test doubles and $_SERVER.
+#
+# Separate because PHPStan takes one level per run and the shipped code is held
+# to a higher one. A test that reaches into a mixed from a decoded JSON body is
+# doing exactly what a test should; src is where mixed has to be pinned down.
+parameters:
+    level: 5
+    paths:
+        - tests
