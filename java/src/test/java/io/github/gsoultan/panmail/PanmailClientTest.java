@@ -629,4 +629,25 @@ class PanmailClientTest {
         }
     }
 
+    /**
+     * The api key is a tenant-wide sending credential, and http puts it on the
+     * wire in the clear. Loopback is exempt because a gateway on localhost is
+     * how this is developed against, and there is no network to listen on.
+     */
+    @Test
+    void httpIsRefusedAwayFromLoopback() {
+        for (String baseUrl : List.of("http://mail.example.com", "http://169.254.169.254/")) {
+            assertThrows(InvalidMessageException.class,
+                    () -> PanmailClient.builder().baseUrl(baseUrl).apiKey("k").build(),
+                    baseUrl + " was accepted");
+        }
+        for (String baseUrl : List.of(
+                "https://mail.example.com", "http://localhost:8080", "http://LOCALHOST:8080",
+                "http://127.0.0.1:9000", "http://127.5.5.5:9000", "http://[::1]:9000")) {
+            assertDoesNotThrow(
+                    () -> PanmailClient.builder().baseUrl(baseUrl).apiKey("k").build(),
+                    baseUrl + " was refused");
+        }
+    }
+
 }

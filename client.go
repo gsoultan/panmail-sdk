@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -214,9 +215,30 @@ func validateBaseURL(baseURL string) error {
 	// url travels into every error this client reports, and an error is a
 	// thing that gets logged. The api key is the credential; if something in
 	// front of the gateway wants basic auth too, WithHeader is where it goes.
+	// The api key is a tenant-wide sending credential and http puts it on the
+	// wire in the clear. Loopback is exempt because a gateway on localhost is
+	// how the thing is developed against, and there is no network to listen on.
+	if parsed.Scheme == "http" && !isLoopback(parsed.Hostname()) {
+		return fmt.Errorf("panmail: base url %q uses http, which would send the api key "+
+			"in cleartext; use https, or http only against a loopback host", baseURL)
+	}
 	if parsed.User != nil {
 		return errors.New("panmail: base url must not carry credentials; " +
 			"the api key authenticates the send, and a password in the url ends up in logs")
 	}
 	return nil
+}
+
+// isLoopback reports whether host is this machine — the one place plaintext
+// http carries the api key no further than the process next to it.
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	// Covers 127.0.0.0/8 and ::1, rather than just the two spellings of them
+	// that people write most often.
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }

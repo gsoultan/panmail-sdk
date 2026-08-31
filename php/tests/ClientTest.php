@@ -573,4 +573,34 @@ final class ClientTest extends TestCase
             self::assertStringNotContainsString('hunter2', $refusal->getMessage());
         }
     }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function baseUrlSchemes(): iterable
+    {
+        yield 'public host over http' => ['http://mail.example.com', false];
+        yield 'link-local over http' => ['http://169.254.169.254/', false];
+        yield 'public host over https' => ['https://mail.example.com', true];
+        yield 'localhost' => ['http://localhost:8080', true];
+        yield 'LOCALHOST' => ['http://LOCALHOST:8080', true];
+        yield '127.0.0.1' => ['http://127.0.0.1:9000', true];
+        yield 'the rest of 127/8' => ['http://127.5.5.5:9000', true];
+        yield 'ipv6 loopback' => ['http://[::1]:9000', true];
+    }
+
+    /**
+     * The api key is a tenant-wide sending credential, and http puts it on the
+     * wire in the clear. Loopback is exempt because a gateway on localhost is
+     * how this is developed against, and there is no network to listen on.
+     */
+    #[DataProvider('baseUrlSchemes')]
+    public function testHttpIsRefusedAwayFromLoopback(string $baseUrl, bool $allowed): void
+    {
+        if (!$allowed) {
+            $this->expectException(InvalidMessageException::class);
+        }
+
+        $client = new Client($baseUrl, 'k');
+
+        self::assertInstanceOf(Client::class, $client);
+    }
 }

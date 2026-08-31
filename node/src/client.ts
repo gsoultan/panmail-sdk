@@ -236,6 +236,15 @@ function validateBaseUrl(baseUrl: string): void {
   if (!parsed.host) {
     throw new InvalidMessageError(`panmail: base url has no host: "${baseUrl}"`);
   }
+  // The api key is a tenant-wide sending credential and http puts it on the
+  // wire in the clear. Loopback is exempt because a gateway on localhost is how
+  // the thing is developed against, and there is no network to listen on.
+  if (parsed.protocol === 'http:' && !isLoopback(parsed.hostname)) {
+    throw new InvalidMessageError(
+      `panmail: base url "${baseUrl}" uses http, which would send the api key in cleartext; ` +
+        'use https, or http only against a loopback host',
+    );
+  }
   // Userinfo is deprecated in RFC 3986 for the reason it matters here. undici
   // refuses such a url anyway, but it does so by throwing a TypeError that
   // quotes the whole url — password included — which this client would then
@@ -315,4 +324,19 @@ function validateHeaders(headers: Record<string, string>): void {
       );
     }
   }
+}
+
+/**
+ * Is this host this machine — the one place plaintext http carries the api key
+ * no further than the process next to it?
+ */
+function isLoopback(hostname: string): boolean {
+  // URL keeps the brackets on an IPv6 literal.
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  if (host === 'localhost' || host === '::1') return true;
+
+  // The whole of 127.0.0.0/8, not just 127.0.0.1.
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  return v4 !== null && v4.slice(1).every((n) => Number(n) <= 255) && v4[1] === '127';
 }

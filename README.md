@@ -194,6 +194,11 @@ header named. If you supply your own HTTP client, keep that property; see
 a message id and a status, and a proxy error page is not worth buffering into
 an out-of-memory error.
 
+**The gateway must be reached over `https`.** `http://` is refused unless the
+host is loopback, so a gateway on `localhost` still works for development while
+a plaintext production URL fails when you build the client rather than sending
+your key in the clear.
+
 **The key cannot be set from two places.** The per-request header options will
 not set `X-API-Key`, case insensitively.
 

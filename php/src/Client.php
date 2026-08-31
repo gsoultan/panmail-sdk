@@ -313,6 +313,24 @@ final class Client
         }
     }
 
+    /**
+     * Is this host this machine — the one place plaintext http carries the api
+     * key no further than the process next to it?
+     */
+    private static function isLoopback(string $host): bool
+    {
+        // parse_url keeps the brackets on an IPv6 literal.
+        $host = strtolower(trim($host, '[]'));
+
+        if ($host === 'localhost' || $host === '::1') {
+            return true;
+        }
+
+        // The whole of 127.0.0.0/8, not just 127.0.0.1.
+        return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+            && str_starts_with($host, '127.');
+    }
+
     private function validateBaseUrl(string $baseUrl): void
     {
         if ($baseUrl === '') {
@@ -334,6 +352,16 @@ final class Client
         }
         if (($parsed['host'] ?? '') === '') {
             throw new InvalidMessageException("panmail: base url has no host: \"$baseUrl\"");
+        }
+        // The api key is a tenant-wide sending credential and http puts it on
+        // the wire in the clear. Loopback is exempt because a gateway on
+        // localhost is how the thing is developed against, and there is no
+        // network to listen on.
+        if ($scheme === 'http' && !self::isLoopback((string) $parsed['host'])) {
+            throw new InvalidMessageException(
+                "panmail: base url \"$baseUrl\" uses http, which would send the api key in "
+                . 'cleartext; use https, or http only against a loopback host'
+            );
         }
         // Userinfo is deprecated in RFC 3986 for the reason it matters here:
         // the url travels into every error this client reports, and an error

@@ -694,3 +694,29 @@ func TestNewRejectsCredentialsInTheBaseURL(t *testing.T) {
 		}
 	}
 }
+
+// The api key is a tenant-wide sending credential, and http puts it on the
+// wire in the clear. Loopback is exempt because a gateway on localhost is how
+// this is developed against, and there is no network to listen on.
+func TestNewRequiresHTTPSAwayFromLoopback(t *testing.T) {
+	refused := []string{"http://mail.example.com", "http://169.254.169.254/"}
+	accepted := []string{
+		"https://mail.example.com",
+		"http://localhost:8080",
+		"http://LOCALHOST:8080",
+		"http://127.0.0.1:9000",
+		"http://127.5.5.5:9000",
+		"http://[::1]:9000",
+	}
+
+	for _, baseURL := range refused {
+		if _, err := panmail.New(baseURL, "k"); err == nil {
+			t.Errorf("New accepted cleartext %q", baseURL)
+		}
+	}
+	for _, baseURL := range accepted {
+		if _, err := panmail.New(baseURL, "k"); err != nil {
+			t.Errorf("New refused %q: %v", baseURL, err)
+		}
+	}
+}

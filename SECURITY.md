@@ -36,6 +36,13 @@ response is a message id and a status; anything approaching that size is a
 proxy's error page, and buffering it is how a misbehaving intermediary turns
 into an out-of-memory error in your process.
 
+**The gateway must be reached over https.** `http://` is refused unless the
+host is loopback — `localhost`, anything in `127.0.0.0/8`, or `::1` — because a
+gateway on this machine has no network to listen on. Anywhere else, plaintext
+would put a tenant-wide sending credential on the wire in the clear, and a
+typo'd or copy-pasted `http://` production URL is not something to discover
+from a packet capture.
+
 **The base URL cannot carry credentials.** `https://user:pass@gateway` is
 refused by all four. The URL travels into every error the client reports, and
 an error is a thing that gets logged — Node's `fetch` refuses such a URL anyway,

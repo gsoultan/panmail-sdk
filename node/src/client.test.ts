@@ -470,3 +470,27 @@ describe('credentials in the base url', () => {
     });
   }
 });
+
+// The api key is a tenant-wide sending credential, and http puts it on the wire
+// in the clear. Loopback is exempt because a gateway on localhost is how this is
+// developed against, and there is no network to listen on.
+describe('http away from loopback', () => {
+  for (const baseUrl of ['http://mail.example.com', 'http://169.254.169.254/']) {
+    test(`${baseUrl} is refused`, () => {
+      expect(() => new PanmailClient(baseUrl, 'k')).toThrow(InvalidMessageError);
+    });
+  }
+
+  for (const baseUrl of [
+    'https://mail.example.com',
+    'http://localhost:8080',
+    'http://LOCALHOST:8080',
+    'http://127.0.0.1:9000',
+    'http://127.5.5.5:9000',
+    'http://[::1]:9000',
+  ]) {
+    test(`${baseUrl} is allowed`, () => {
+      expect(() => new PanmailClient(baseUrl, 'k')).not.toThrow();
+    });
+  }
+});

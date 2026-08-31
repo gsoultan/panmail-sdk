@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -364,6 +365,15 @@ public final class PanmailClient {
             throw new InvalidMessageException(
                     "panmail: base url has no host: \"" + baseUrl + "\"");
         }
+        // The api key is a tenant-wide sending credential and http puts it on
+        // the wire in the clear. Loopback is exempt because a gateway on
+        // localhost is how the thing is developed against, and there is no
+        // network to listen on.
+        if ("http".equals(scheme) && !isLoopback(parsed.getHost())) {
+            throw new InvalidMessageException(
+                    "panmail: base url \"" + baseUrl + "\" uses http, which would send the api "
+                            + "key in cleartext; use https, or http only against a loopback host");
+        }
         // Userinfo is deprecated in RFC 3986 for the reason it matters here:
         // the url travels into every error this client reports, and an error
         // is a thing that gets logged. The api key is the credential; if
@@ -375,6 +385,21 @@ public final class PanmailClient {
                             + "the send, and a password in the url ends up in logs");
         }
         return URI.create(baseUrl.replaceAll("/+$", "") + SEND_PROCEDURE);
+    }
+
+    /**
+     * Is this host this machine — the one place plaintext http carries the api
+     * key no further than the process next to it?
+     */
+    private static boolean isLoopback(String rawHost) {
+        // URI keeps the brackets on an IPv6 literal.
+        String host = rawHost.toLowerCase(Locale.ROOT).replaceAll("^\\[|\\]$", "");
+
+        if ("localhost".equals(host) || "::1".equals(host)) {
+            return true;
+        }
+        // The whole of 127.0.0.0/8, not just 127.0.0.1.
+        return host.matches("127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
     }
 
     /** Builds a {@link PanmailClient}. */

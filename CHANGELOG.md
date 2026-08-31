@@ -10,6 +10,11 @@ The four language packages share a version number and are released together.
 
 ### Security
 
+- **`http://` is refused unless the host is loopback.** All four accepted
+  plaintext to any host, which sends the tenant-wide API key in the clear.
+  `localhost`, `127.0.0.0/8` and `::1` stay allowed so local development is
+  unaffected; anything else must be `https`. A side effect worth having: the
+  cloud metadata endpoint `http://169.254.169.254/` is now refused too.
 - **A base URL carrying credentials is now refused by all four.** The URL
   travels into every error the client reports, and errors get logged. Node
   leaked a password that way: undici refuses such a URL, but by throwing a
