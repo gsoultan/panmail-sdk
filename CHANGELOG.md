@@ -10,6 +10,14 @@ The four language packages share a version number and are released together.
 
 ### Security
 
+- **A quadratic-backtracking regex trimmed the base URL's trailing slashes** in
+  the Node and Java clients (`/\/+$/` and `replaceAll("/+$", "")`). Anchored at
+  the end but not the start, so on a URL that is mostly slashes the engine
+  retries from every slash: 80,000 of them took 2.3 seconds in Node, against
+  nothing for a loop. Found by CodeQL on its first run, and rated high. The base
+  URL comes from whoever embeds the library rather than from a request, so this
+  was unlikely rather than reachable — but Go and PHP were already doing it
+  linearly with `TrimRight` and `rtrim`, so the other two now match.
 - **`http://` is refused unless the host is loopback.** All four accepted
   plaintext to any host, which sends the tenant-wide API key in the clear.
   `localhost`, `127.0.0.0/8` and `::1` stay allowed so local development is

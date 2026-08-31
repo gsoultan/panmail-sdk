@@ -384,7 +384,23 @@ public final class PanmailClient {
                     "panmail: base url must not carry credentials; the api key authenticates "
                             + "the send, and a password in the url ends up in logs");
         }
-        return URI.create(baseUrl.replaceAll("/+$", "") + SEND_PROCEDURE);
+        return URI.create(withoutTrailingSlashes(baseUrl) + SEND_PROCEDURE);
+    }
+
+    /**
+     * Trims trailing slashes without a regular expression.
+     *
+     * {@code "/+$"} is anchored at the end but not the start, so on a url that
+     * is mostly slashes the engine retries the match from every slash in turn
+     * and the cost is quadratic. Go and PHP already did this with TrimRight and
+     * rtrim; this is the same thing, and no harder to read than the regex was.
+     */
+    private static String withoutTrailingSlashes(String baseUrl) {
+        int end = baseUrl.length();
+        while (end > 0 && baseUrl.charAt(end - 1) == '/') {
+            end--;
+        }
+        return baseUrl.substring(0, end);
     }
 
     /**

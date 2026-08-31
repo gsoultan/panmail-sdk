@@ -602,7 +602,7 @@ class PanmailClientTest {
                 .baseUrl("https://mail.example.com")
                 .apiKey("k")
                 .header(name, value)
-                .build());
+                .build(), label + " was accepted");
     }
 
     @Test

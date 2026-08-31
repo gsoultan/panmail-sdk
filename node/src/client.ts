@@ -111,7 +111,7 @@ export class PanmailClient {
       throw new InvalidMessageError('panmail: an api key is required');
     }
 
-    this.#endpoint = baseUrl.replace(/\/+$/, '') + SEND_PROCEDURE;
+    this.#endpoint = withoutTrailingSlashes(baseUrl) + SEND_PROCEDURE;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#rateLimitRetries = Math.max(0, options.rateLimitRetries ?? 0);
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -339,4 +339,20 @@ function isLoopback(hostname: string): boolean {
   // The whole of 127.0.0.0/8, not just 127.0.0.1.
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   return v4 !== null && v4.slice(1).every((n) => Number(n) <= 255) && v4[1] === '127';
+}
+
+/**
+ * Trims trailing slashes without a regular expression.
+ *
+ * `/\/+$/` is anchored at the end but not the start, so on a url that is
+ * mostly slashes the engine retries the match from every slash in turn and the
+ * cost is quadratic: 80,000 of them took 2.3 seconds, against nothing here.
+ * The base url comes from whoever embeds this library rather than from a
+ * request, which makes it unlikely rather than impossible — and a loop is no
+ * harder to read than the regex was.
+ */
+function withoutTrailingSlashes(baseUrl: string): string {
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl[end - 1] === '/') end--;
+  return baseUrl.slice(0, end);
 }
