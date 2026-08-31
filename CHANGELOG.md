@@ -89,6 +89,9 @@ The four language packages share a version number and are released together.
   the others returned `text/csv` — and a per-language test for one extension
   fixed that case without preventing the next. Changing the fixture now fails
   Go, PHP, Java and Node together.
+- CodeQL over Go, Java and TypeScript, on every push and weekly, with the
+  `security-and-quality` queries. PHP is not analysed by CodeQL, which is why
+  PHPStan runs at `max` on the shipped PHP.
 - Static analysis in CI: `golangci-lint` for Go and PHPStan for PHP, the latter
   at `max` on shipped code. Both earned their place on the first run.
 - Java compiles under `-Xlint:all -Werror`. It found seven exception classes

@@ -66,6 +66,18 @@ security property, but the same reasoning: sending is not idempotent and the
 gateway has no de-duplication key, so a retry after a timeout may be a second
 copy of a message already on its way to a recipient.
 
+## What checks this
+
+The properties above are each held by a test in all four languages, so a change
+that removes one turns the others red rather than shipping quietly. Beyond that:
+
+- **CodeQL** runs on every push and weekly, over Go, Java and TypeScript, with
+  the `security-and-quality` queries.
+- **PHPStan at `max`** covers the shipped PHP, which CodeQL does not analyse —
+  and which is where the one injectable bug found so far actually was.
+- **golangci-lint** includes `gosec`, and `errorlint`, which guards the
+  `errors.As` every typed refusal depends on.
+
 ## Supported versions
 
 Fixes go to the latest minor release.
