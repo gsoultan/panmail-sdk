@@ -629,4 +629,28 @@ final class ClientTest extends TestCase
         self::assertSame($expected, $exported);
     }
 
+    /**
+     * The documented fallback, which the content-type fixture cannot cover
+     * because it is not an extension mapping: anything unrecognised is sent as
+     * application/octet-stream, which every mail client offers as a download
+     * rather than trying to display.
+     */
+    public function testAnUnknownExtensionFallsBackToOctetStream(): void
+    {
+        $transport = new FakeTransport(self::accepted());
+
+        self::client($transport)->send(new Message(
+            providerId: 'p',
+            from: 'app@example.com',
+            to: ['user@example.net'],
+            text: 'hi',
+            attachments: [new Attachment('ledger.qqq', 'x')],
+        ));
+
+        self::assertSame(
+            'application/octet-stream',
+            $transport->calls[0]['body']['attachments'][0]['contentType']
+        );
+    }
+
 }

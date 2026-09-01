@@ -763,3 +763,264 @@ func TestStatusConstantsMatchTheSharedFixture(t *testing.T) {
 		}
 	}
 }
+
+// Every refusal type's Error and Unwrap. Both were at zero coverage, which
+// matters most for Unwrap: Go is the only one of the four clients where the
+// Connect code is not on the refusal itself. PHP, Java and Node put code and
+// status on the subclass; here you have to unwrap to an *APIError to reach
+// them, so that chain is the documented path rather than an implementation
+// detail.
+func TestRefusalsCarryTheirCauseAndReadWell(t *testing.T) {
+	cases := map[string]struct {
+		status     int
+		code       string
+		headers    map[string]string
+		wantInText []string
+	}{
+		"rate limit": {
+			status: http.StatusTooManyRequests, code: "resource_exhausted",
+			headers:    map[string]string{"Retry-After": "3"},
+			wantInText: []string{"send rate exceeded", "3s", "over the limit"},
+		},
+		"full queue": {
+			status: http.StatusTooManyRequests, code: "resource_exhausted",
+			wantInText: []string{"queue is too deep", "over the limit"},
+		},
+		"bad key": {
+			status: http.StatusUnauthorized, code: "unauthenticated",
+			wantInText: []string{"api key was not accepted", "over the limit"},
+		},
+		"anything else": {
+			status: http.StatusBadRequest, code: "invalid_argument",
+			wantInText: []string{"invalid_argument", "over the limit"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			g := respond(t, func(w http.ResponseWriter, _ int) {
+				for k, v := range tc.headers {
+					w.Header().Set(k, v)
+				}
+				refuse(w, tc.status, tc.code, "over the limit")
+			})
+
+			_, err := client(t, g).Send(context.Background(), hello())
+			if err == nil {
+				t.Fatal("Send did not fail")
+			}
+
+			// Error() renders the refusal and the cause underneath it.
+			for _, want := range tc.wantInText {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Error() = %q, want it to mention %q", err, want)
+				}
+			}
+
+			// Unwrap() reaches the APIError carrying the Connect code.
+			var apiErr *panmail.APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("errors.As could not reach *APIError from %T", err)
+			}
+			if apiErr.Code != tc.code {
+				t.Errorf("Code = %q, want %q", apiErr.Code, tc.code)
+			}
+			if apiErr.Status != tc.status {
+				t.Errorf("Status = %d, want %d", apiErr.Status, tc.status)
+			}
+		})
+	}
+}
+
+// An APIError with no message falls back to naming the code and status, so a
+// proxy's empty body still produces something a reader can act on.
+func TestAPIErrorWithoutAMessageStillNamesTheCode(t *testing.T) {
+	err := &panmail.APIError{Code: "internal", Status: 500}
+
+	for _, want := range []string{"internal", "500"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Error() = %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+// WithHTTPClient had no test at all, which is awkward for an option whose
+// documented behaviour is that the client is copied rather than used: the copy
+// keeps the caller's Transport, and so their connection pool, but takes a
+// CheckRedirect of ours. Both halves of that are worth holding.
+func TestWithHTTPClientKeepsTheTransportAndTakesTheRedirectPolicy(t *testing.T) {
+	g := accepts(t)
+
+	// A transport that records it was used, so "the caller's pool is still the
+	// caller's" is checked rather than asserted.
+	used := false
+	caller := &http.Client{
+		Timeout: 17 * time.Second,
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			used = true
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	if _, err := client(t, g, panmail.WithHTTPClient(caller)).Send(context.Background(), hello()); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if !used {
+		t.Error("the caller's Transport was not used")
+	}
+	// The caller's own client is left as they configured it.
+	if caller.CheckRedirect != nil {
+		t.Error("the caller's client was mutated; it should have been copied")
+	}
+	if caller.Timeout != 17*time.Second {
+		t.Errorf("the caller's Timeout changed to %v", caller.Timeout)
+	}
+}
+
+// WithTimeout is documented as ignored when WithHTTPClient is used, because a
+// caller who brings a client has already made that decision.
+func TestWithTimeoutIsIgnoredWhenAClientIsSupplied(t *testing.T) {
+	g := accepts(t)
+	caller := &http.Client{Timeout: 17 * time.Second}
+
+	if _, err := client(t, g,
+		panmail.WithHTTPClient(caller),
+		panmail.WithTimeout(time.Millisecond),
+	).Send(context.Background(), hello()); err != nil {
+		t.Fatalf("Send failed, so the millisecond timeout was not ignored: %v", err)
+	}
+}
+
+// WithTimeout on its own does bound a send.
+func TestWithTimeoutBoundsASend(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		time.Sleep(300 * time.Millisecond)
+		writeJSON(w, http.StatusOK, map[string]any{"messageId": "msg_01"})
+	})
+
+	_, err := client(t, g, panmail.WithTimeout(30*time.Millisecond)).
+		Send(context.Background(), hello())
+	if err == nil {
+		t.Fatal("Send ignored the timeout")
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// The documented fallback: a filename whose extension means nothing to the
+// mime table is sent as application/octet-stream, which every mail client
+// offers as a download rather than trying to display.
+func TestAnUnknownExtensionFallsBackToOctetStream(t *testing.T) {
+	g := accepts(t)
+
+	msg := hello()
+	msg.Attachments = []panmail.Attachment{{Filename: "ledger.qqq", Content: []byte("x")}}
+	if _, err := client(t, g).Send(context.Background(), msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	attachments, _ := g.bodies[0]["attachments"].([]any)
+	attachment, _ := attachments[0].(map[string]any)
+	if got := attachment["contentType"]; got != "application/octet-stream" {
+		t.Errorf("contentType = %v, want application/octet-stream", got)
+	}
+}
+
+// A proxy answering with its own error page carries no Connect code, so the
+// status is all there is to classify on. 429, 401 and 403 each still reach the
+// type a caller would branch on.
+func TestAStatusWithoutACodeIsStillClassified(t *testing.T) {
+	cases := map[int]func(error) bool{
+		http.StatusTooManyRequests: func(err error) bool {
+			var e *panmail.BacklogFullError
+			return errors.As(err, &e)
+		},
+		http.StatusUnauthorized: func(err error) bool {
+			var e *panmail.AuthError
+			return errors.As(err, &e)
+		},
+		http.StatusForbidden: func(err error) bool {
+			var e *panmail.AuthError
+			return errors.As(err, &e)
+		},
+	}
+
+	for status, isRight := range cases {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			g := respond(t, func(w http.ResponseWriter, _ int) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte("<html>a proxy said no</html>"))
+			})
+
+			_, err := client(t, g).Send(context.Background(), hello())
+			if err == nil || !isRight(err) {
+				t.Fatalf("status %d produced %T: %v", status, err, err)
+			}
+		})
+	}
+}
+
+// A 200 whose body is not the send result. The other three clients each test
+// this; Go did not.
+func TestANonJSONSuccessBodyIsAnError(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html>hello from a proxy</html>"))
+	})
+
+	_, err := client(t, g).Send(context.Background(), hello())
+	if err == nil {
+		t.Fatal("Send accepted a body that is not json")
+	}
+	if !strings.Contains(err.Error(), "not json") {
+		t.Errorf("Error() = %q, want it to say the response was not json", err)
+	}
+}
+
+// Asking to wait out a negative number of refusals is asking not to retry.
+func TestNegativeRateLimitRetriesMeansNone(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		w.Header().Set("Retry-After", "1")
+		refuse(w, http.StatusTooManyRequests, "resource_exhausted", "over the send rate")
+	})
+
+	_, err := client(t, g, panmail.WithRateLimitRetries(-5)).Send(context.Background(), hello())
+	if err == nil {
+		t.Fatal("Send did not fail")
+	}
+	if g.calls != 1 {
+		t.Errorf("the gateway was called %d times, want 1", g.calls)
+	}
+}
+
+// Template data is a google.protobuf.Struct, which is JSON and nothing more.
+// Checked before the send so the error names the template data rather than
+// surfacing as an unsupported type from the middle of a marshal.
+func TestTemplateDataThatIsNotJSONIsRefused(t *testing.T) {
+	g := accepts(t)
+
+	msg := hello()
+	msg.TemplateID = "welcome"
+	msg.TemplateData = map[string]any{"callback": func() {}}
+
+	_, err := client(t, g).Send(context.Background(), msg)
+	if err == nil {
+		t.Fatal("Send accepted template data that cannot be JSON")
+	}
+	if !strings.Contains(err.Error(), "template data") {
+		t.Errorf("Error() = %q, want it to name the template data", err)
+	}
+	if g.calls != 0 {
+		t.Error("the gateway was called despite the message being refused")
+	}
+}
+
+// A base url that url.Parse itself rejects, rather than one that parses into
+// something unusable.
+func TestNewRejectsAnUnparseableBaseURL(t *testing.T) {
+	if _, err := panmail.New("https://mail.example.com/\x7f\x00", "k"); err == nil {
+		t.Fatal("New accepted a url that cannot be parsed")
+	}
+}

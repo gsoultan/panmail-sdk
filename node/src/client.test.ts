@@ -523,3 +523,25 @@ describe('the shared event-type fixture', () => {
     expect(Object.keys(Status).length).toBe(Object.keys(fixture.constants).length);
   });
 });
+
+// The documented fallback, which the content-type fixture cannot cover because
+// it is not an extension mapping: anything unrecognised is sent as
+// application/octet-stream, which every mail client offers as a download
+// rather than trying to display.
+test('an unknown extension falls back to octet-stream', async () => {
+  const g = gateway(accepted());
+
+  await client(g.fetch).send(
+    hello({ attachments: [{ filename: 'ledger.qqq', content: 'x' }] }),
+  );
+
+  const attachments = g.calls[0]!.body.attachments as Array<{ contentType: string }>;
+  expect(attachments[0]!.contentType).toBe('application/octet-stream');
+});
+
+// A 200 whose body is not the send result — a proxy answering for the gateway.
+test('a 200 that is not json is a transport error', async () => {
+  const g = gateway(new Response('<html>hello from a proxy</html>', { status: 200 }));
+
+  await expect(client(g.fetch).send(hello())).rejects.toBeInstanceOf(TransportError);
+});

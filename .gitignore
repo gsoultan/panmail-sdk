@@ -16,3 +16,7 @@ node/node_modules/
 node/dist/
 # bun.lock is committed on purpose: CI installs with --frozen-lockfile, which
 # without it silently resolves fresh versions on every run instead of failing.
+
+# Coverage artefacts
+coverage.out
+node/coverage/

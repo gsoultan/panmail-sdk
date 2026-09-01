@@ -31,7 +31,19 @@ jobs:
           go-version: ${{ matrix.go }}
       - run: gofmt -l . | tee /dev/stderr | (! read)
       - run: go vet ./...
-      - run: go test -race ./...
+      - run: go test -race -coverprofile=coverage.out ./...
+      # A floor rather than a target. It sits under where the suite is so an
+      # honest refactor does not trip it, and above where a whole untested
+      # feature would put it. It was 88.5% before anyone looked, with Unwrap
+      # on every error type and both of WithHTTPClient and WithTimeout at zero.
+      - name: Coverage floor
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3) - 1)}')"
+          echo "coverage: $total%"
+          if ! awk -v t="$total" 'BEGIN { exit (t + 0 >= 95) ? 0 : 1 }'; then
+            echo "::error::coverage is $total%, below the 95% floor"
+            exit 1
+          fi
 
   # Not in the matrix above: the linter reads the source, not the toolchain, so
   # running it once per Go version would say the same thing twice.

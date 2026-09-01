@@ -103,6 +103,19 @@ Publishing needs these repository secrets: `NPM_TOKEN`,
 `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY`,
 `MAVEN_GPG_PASSPHRASE`.
 
+## Coverage
+
+`go test -coverprofile` gates at 95% in CI. It is a floor, not a target — the
+last few percent of a Go client are error branches that need a broken socket to
+reach, and contorting the code to reach them buys nothing.
+
+What the floor is for is the other kind of gap: before anyone measured, every
+`Unwrap` was at zero, and so were two public options. Those were not hard to
+test, only easy to forget.
+
+Node reports coverage on every run and gates on nothing, deliberately — see the
+comment in `node/bunfig.toml`.
+
 ## Static analysis
 
 Go is linted by `golangci-lint` (config in `.golangci.yml`) and PHP by PHPStan,

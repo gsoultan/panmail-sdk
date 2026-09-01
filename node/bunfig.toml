@@ -1,0 +1,15 @@
+[test]
+# Coverage is reported on every run so a drop is visible in the output rather
+# than in a report nobody opens.
+#
+# Deliberately no coverageThreshold. Bun enforces it per file, and the binding
+# file is src/errors.ts at 83% of functions — not a gap, but a synthesised
+# constructor bun counts for each brace-only subclass (BacklogFullError,
+# AuthError) that there is nothing to write a test against. A threshold low
+# enough to pass that would be 0.83, which would let line coverage fall from
+# 100% to 83% without a word. A floor that permits a seventeen-point drop is
+# not a floor.
+#
+# Go is where the number is gated, because `go tool cover` gives one total for
+# the module and a floor there means something. See the Go job in ci.yml.
+coverage = true

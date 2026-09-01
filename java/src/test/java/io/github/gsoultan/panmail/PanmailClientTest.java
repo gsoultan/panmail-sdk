@@ -679,4 +679,34 @@ class PanmailClientTest {
         assertEquals(expected, exported);
     }
 
+    /**
+     * The documented fallback, which the content-type fixture cannot cover
+     * because it is not an extension mapping: anything unrecognised is sent as
+     * application/octet-stream, which every mail client offers as a download
+     * rather than trying to display.
+     */
+    @Test
+    void anUnknownExtensionFallsBackToOctetStream() throws IOException {
+        accepts();
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to("user@example.net")
+                .text("hi")
+                .attach(new Attachment("ledger.qqq", "x"))
+                .build());
+
+        assertEquals("application/octet-stream",
+                bodies.get(0).path("attachments").get(0).path("contentType").asText());
+    }
+
+    /** A 200 whose body is not the send result — a proxy answering for the gateway. */
+    @Test
+    void aTwoHundredThatIsNotJsonIsATransportError() throws IOException {
+        gateway((exchange, call) -> respond(exchange, 200, "<html>hello from a proxy</html>"));
+
+        assertThrows(TransportException.class, () -> client().send(hello()));
+    }
+
 }

@@ -104,6 +104,19 @@ The four language packages share a version number and are released together.
   `testdata/event-types.json` is generated from the proto by
   `scripts/sync-status.py` and asserted by all four suites, so the next value
   the gateway adds fails four test runs rather than none.
+- **Coverage is measured, and what it found is now tested.** Go was at 88.5%:
+  `Error()` and `Unwrap()` on every refusal type at zero, and both
+  `WithHTTPClient` and `WithTimeout` never exercised at all. `Unwrap` mattered
+  most — Go is the only one of the four where the Connect code is not on the
+  refusal itself, so unwrapping to `*APIError` is the documented way to reach
+  it, and nothing held that. Now 98.4%, with the remainder three genuinely
+  unreachable defensive branches.
+
+  The same sweep found the documented `application/octet-stream` fallback
+  untested in all four, and a non-JSON 200 untested in Java and Node. CI gates
+  Go at a 95% floor; Node reports coverage without a threshold, because bun
+  enforces per file and the only floor that would pass is low enough to let
+  line coverage fall seventeen points in silence.
 - `scripts/check.sh` runs everything CI runs, for whichever of the four
   toolchains are installed, and lists what it skipped rather than letting a
   partial run look complete.
