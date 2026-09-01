@@ -30,6 +30,7 @@
         "analyse": [
             "phpstan analyse -c phpstan.neon --no-progress --memory-limit=1G",
             "phpstan analyse -c phpstan-tests.neon --no-progress --memory-limit=1G"
-        ]
+        ],
+        "coverage": "phpunit --coverage-clover=coverage.xml --coverage-filter src"
     }
 }

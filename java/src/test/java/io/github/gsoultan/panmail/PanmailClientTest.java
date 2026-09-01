@@ -709,4 +709,59 @@ class PanmailClientTest {
         assertThrows(TransportException.class, () -> client().send(hello()));
     }
 
+    /**
+     * The bulk overload of templateData, and the Attachment constructor that
+     * takes bytes without a content type. Both are public, and neither had
+     * ever been called by a test — the kind of gap that only shows up when
+     * something counts.
+     */
+    @Test
+    void theBulkTemplateDataOverloadAndTheBytesAttachmentWork() throws IOException {
+        accepts();
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("name", "Ada");
+        data.put("total", 42);
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to("user@example.net")
+                .templateId("receipt")
+                .templateData(data)
+                .attach(new Attachment("receipt.pdf", "%PDF-1.4".getBytes(StandardCharsets.UTF_8)))
+                .build());
+
+        JsonNode body = bodies.get(0);
+        assertEquals("Ada", body.path("templateData").path("name").asText());
+        assertEquals(42, body.path("templateData").path("total").asInt());
+
+        JsonNode attachment = body.path("attachments").get(0);
+        assertEquals("receipt.pdf", attachment.path("filename").asText());
+        // Guessed from the extension, since this constructor takes no type.
+        assertEquals("application/pdf", attachment.path("contentType").asText());
+        assertEquals("%PDF-1.4", new String(
+                Base64.getDecoder().decode(attachment.path("content").asText()),
+                StandardCharsets.UTF_8));
+    }
+
+    /** templateData(Map) adds to what is there rather than replacing it. */
+    @Test
+    void theBulkTemplateDataOverloadAccumulates() throws IOException {
+        accepts();
+
+        client().send(Message.builder()
+                .providerId("prov")
+                .from("app@example.com")
+                .to("user@example.net")
+                .templateId("receipt")
+                .templateData("first", 1)
+                .templateData(Map.of("second", 2))
+                .build());
+
+        JsonNode data = bodies.get(0).path("templateData");
+        assertEquals(1, data.path("first").asInt());
+        assertEquals(2, data.path("second").asInt());
+    }
+
 }

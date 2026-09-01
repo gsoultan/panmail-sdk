@@ -77,6 +77,9 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           extensions: curl, json
+          # Go and Java gate coverage with their own toolchains; PHP needs a
+          # driver to produce a number at all.
+          coverage: xdebug
       # The published package is defined at the repository root, because that
       # is the only composer.json Packagist reads. PackageDefinitionTest keeps
       # the two from drifting; this checks the published one is well formed.
@@ -89,6 +92,11 @@ jobs:
       # from a decoded JSON body and an "Array to string conversion" in front
       # of a caller, which is exactly the bug it found in classify().
       - run: composer analyse
+      # A floor, not a target. The two statements it does not reach are a
+      # private constructor that exists to stop instantiation, and curl_init
+      # returning false.
+      - run: composer coverage
+      - run: python3 ../scripts/coverage-floor.py coverage.xml 95
 
   java:
     runs-on: ubuntu-latest

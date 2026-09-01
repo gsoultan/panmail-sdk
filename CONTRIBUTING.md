@@ -105,16 +105,31 @@ Publishing needs these repository secrets: `NPM_TOKEN`,
 
 ## Coverage
 
-`go test -coverprofile` gates at 95% in CI. It is a floor, not a target — the
-last few percent of a Go client are error branches that need a broken socket to
-reach, and contorting the code to reach them buys nothing.
+Three of the four gate a floor in CI:
 
-What the floor is for is the other kind of gap: before anyone measured, every
-`Unwrap` was at zero, and so were two public options. Those were not hard to
-test, only easy to forget.
+| | how | floor | where it sits |
+| --- | --- | --- | --- |
+| Go | `go tool cover` | 95% | 98.4% |
+| PHP | xdebug + `scripts/coverage-floor.py` | 95% | 99.1% |
+| Java | jacoco `check` | 90% | 95.3% |
+| Node | reported, not gated | — | 100% lines |
 
-Node reports coverage on every run and gates on nothing, deliberately — see the
-comment in `node/bunfig.toml`.
+They are floors, not targets. The last few percent of any of these clients are
+error branches that need a broken socket to reach, and contorting the code to
+reach them buys nothing — a marshal that cannot fail because its input was
+validated a function earlier is not a gap.
+
+What the floors are for is the other kind: before anyone measured, Go had every
+`Unwrap` at zero and two public options never called, Java had two public
+methods never called, and PHP had the guard against a `JsonException` escaping
+its own hierarchy untested. None were hard to test, only easy to forget.
+
+Node reports coverage and gates on nothing, deliberately — bun enforces per
+file, and the only floor that would pass is low enough to be meaningless. The
+reason is written in `node/bunfig.toml` so nobody replaces it with a number
+that does not hold.
+
+PHP coverage needs a driver: `composer coverage` with xdebug or pcov loaded.
 
 ## Static analysis
 

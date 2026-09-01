@@ -653,4 +653,71 @@ final class ClientTest extends TestCase
         );
     }
 
+    /**
+     * A message that cannot be encoded. Left alone this escapes as a bare
+     * JsonException, which is not a PanmailException and so slips past every
+     * catch a caller wrote from the list in send()'s docblock — the guard for
+     * that had no test until now.
+     */
+    public function testAMessageThatCannotBeEncodedIsAnInvalidMessage(): void
+    {
+        $transport = new FakeTransport(self::accepted());
+
+        try {
+            self::client($transport)->send(new Message(
+                providerId: 'p',
+                from: 'app@example.com',
+                to: ['user@example.net'],
+                templateId: 'receipt',
+                // Inf has no JSON representation.
+                templateData: ['total' => INF],
+            ));
+            self::fail('the message was accepted');
+        } catch (InvalidMessageException $refusal) {
+            self::assertStringContainsString('could not be encoded as json', $refusal->getMessage());
+        }
+
+        self::assertSame([], $transport->calls, 'the gateway was called anyway');
+    }
+
+    /** @return iterable<string, array{int, class-string}> */
+    public static function statusesWithoutACode(): iterable
+    {
+        // A proxy answering with its own error page carries no Connect code,
+        // so the status is all there is to classify on.
+        yield '429' => [429, BacklogFullException::class];
+        yield '401' => [401, AuthException::class];
+        yield '403' => [403, AuthException::class];
+    }
+
+    #[DataProvider('statusesWithoutACode')]
+    public function testAStatusWithoutACodeIsStillClassified(int $status, string $expected): void
+    {
+        $transport = new FakeTransport(
+            new Response($status, [], '<html>a proxy said no</html>')
+        );
+
+        $this->expectException($expected);
+
+        self::client($transport)->send(self::hello());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function unusableBaseUrls(): iterable
+    {
+        yield 'not a url at all' => ['http://:80'];
+        // A scheme and a path and nothing between them. parse_url accepts it,
+        // which is what makes it reach the host check rather than stopping at
+        // the one above — "https:///x" is rejected as unparseable first.
+        yield 'a scheme and a path but no host' => ['http:/panmail'];
+    }
+
+    #[DataProvider('unusableBaseUrls')]
+    public function testAnUnusableBaseUrlIsRefused(string $baseUrl): void
+    {
+        $this->expectException(InvalidMessageException::class);
+
+        new Client($baseUrl, 'k');
+    }
+
 }

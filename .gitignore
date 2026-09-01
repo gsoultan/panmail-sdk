@@ -20,3 +20,5 @@ node/dist/
 # Coverage artefacts
 coverage.out
 node/coverage/
+php/coverage.xml
+java/target/site/

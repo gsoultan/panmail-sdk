@@ -113,10 +113,17 @@ The four language packages share a version number and are released together.
   unreachable defensive branches.
 
   The same sweep found the documented `application/octet-stream` fallback
-  untested in all four, and a non-JSON 200 untested in Java and Node. CI gates
-  Go at a 95% floor; Node reports coverage without a threshold, because bun
-  enforces per file and the only floor that would pass is low enough to let
-  line coverage fall seventeen points in silence.
+  untested in all four, and a non-JSON 200 untested in Java and Node.
+
+  Java was 94.4% with two public methods never called — the `templateData(Map)`
+  overload and the `Attachment(String, byte[])` constructor — now 95.3% with no
+  uncovered method left. PHP was 94.9%, including the guard that stops a
+  `JsonException` escaping its own exception hierarchy, which had no test at
+  all; now 99.1%.
+
+  CI gates Go at 95%, PHP at 95% and Java at 90%. Node reports coverage without
+  a threshold, because bun enforces per file and the only floor that would pass
+  is low enough to let line coverage fall seventeen points in silence.
 - `scripts/check.sh` runs everything CI runs, for whichever of the four
   toolchains are installed, and lists what it skipped rather than letting a
   partial run look complete.

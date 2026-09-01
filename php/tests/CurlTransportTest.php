@@ -103,4 +103,18 @@ final class CurlTransportTest extends TestCase
         self::assertSame(307, $response->status, 'the redirect was followed');
         self::assertFileDoesNotExist($marker, 'the api key reached the redirect target');
     }
+    /**
+     * The one outcome the client never retries and reports as unknown. Worth a
+     * real socket rather than a fake, because it is cURL's failure being
+     * translated, not the client's own.
+     */
+    public function testAConnectionThatNeverCompletesIsATransportException(): void
+    {
+        $this->expectException(TransportException::class);
+        $this->expectExceptionMessageMatches('/did not complete/');
+
+        // Port 1 on loopback: nothing listens, and the refusal is immediate.
+        (new CurlTransport())->send('http://127.0.0.1:1/send', [], '{}', 5);
+    }
+
 }
