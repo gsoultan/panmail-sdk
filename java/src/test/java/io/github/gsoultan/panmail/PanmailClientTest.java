@@ -27,6 +27,10 @@ import java.util.Spliterators;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.params.provider.Arguments;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
@@ -762,6 +766,44 @@ class PanmailClientTest {
         JsonNode data = bodies.get(0).path("templateData");
         assertEquals(1, data.path("first").asInt());
         assertEquals(2, data.path("second").asInt());
+    }
+
+    /**
+     * "Instances are immutable and safe for concurrent use" is a promise the
+     * class javadoc makes, and nothing was holding it. A client reused across
+     * request threads is the ordinary way to use this — a connection pool is
+     * the reason to keep one — so it is worth more than a comment.
+     */
+    @Test
+    void aClientIsSafeToUseFromManyThreads() throws Exception {
+        int threads = 8;
+        int sendsEach = 20;
+        accepts();
+
+        PanmailClient shared = client();
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        List<Callable<Integer>> work = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            work.add(() -> {
+                for (int j = 0; j < sendsEach; j++) {
+                    shared.send(hello());
+                }
+                return sendsEach;
+            });
+        }
+
+        try {
+            int sent = 0;
+            for (Future<Integer> f : pool.invokeAll(work)) {
+                // get() rethrows anything a worker threw.
+                sent += f.get();
+            }
+            assertEquals(threads * sendsEach, sent);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(threads * sendsEach, calls.get());
     }
 
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1022,5 +1023,63 @@ func TestTemplateDataThatIsNotJSONIsRefused(t *testing.T) {
 func TestNewRejectsAnUnparseableBaseURL(t *testing.T) {
 	if _, err := panmail.New("https://mail.example.com/\x7f\x00", "k"); err == nil {
 		t.Fatal("New accepted a url that cannot be parsed")
+	}
+}
+
+// "Safe for concurrent use" is a promise the doc comment on Client makes, and
+// nothing was holding it. Under -race this is not decoration: a write to
+// anything the client shares between sends — the headers map most obviously —
+// fails here rather than in whichever caller reused a client across handlers.
+func TestAClientIsSafeToUseFromManyGoroutines(t *testing.T) {
+	const goroutines, sendsEach = 8, 25
+
+	// The test's own bookkeeping has to be safe, or it races before the client
+	// gets the chance to.
+	var mu sync.Mutex
+	seen := map[string]int{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.Header.Get("X-API-Key")]++
+		seen[r.Header.Get("X-Trace")]++
+		mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"messageId": "msg_01",
+			"status":    "EMAIL_EVENT_TYPE_PENDING",
+		})
+	}))
+	defer server.Close()
+
+	c, err := panmail.New(server.URL, "test-key", panmail.WithHeader("X-Trace", "abc"))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines*sendsEach)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < sendsEach; j++ {
+				if _, err := c.Send(context.Background(), hello()); err != nil {
+					errs <- err
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent Send: %v", err)
+	}
+
+	// Every send carried both headers: the shared map was read, never rewritten
+	// by one goroutine while another read it.
+	mu.Lock()
+	defer mu.Unlock()
+	if want := goroutines * sendsEach; seen["test-key"] != want || seen["abc"] != want {
+		t.Errorf("headers arrived %d/%d times, want %d each", seen["test-key"], seen["abc"], want)
 	}
 }

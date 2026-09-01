@@ -545,3 +545,24 @@ test('a 200 that is not json is a transport error', async () => {
 
   await expect(client(g.fetch).send(hello())).rejects.toBeInstanceOf(TransportError);
 });
+
+// One client across concurrent sends. Node is single-threaded, so this is not
+// a data race — it is the interleaving that matters: the headers object and
+// the endpoint are shared across every await, and a send that mutated either
+// would corrupt whichever send was suspended at the time.
+test('one client serves many sends at once', async () => {
+  const g = gateway(accepted());
+  const c = client(g.fetch, { headers: { 'X-Trace': 'abc' } });
+
+  const results = await Promise.all(Array.from({ length: 50 }, () => c.send(hello())));
+
+  expect(results).toHaveLength(50);
+  expect(results.every((r) => r.messageId === 'msg_01')).toBe(true);
+  expect(g.calls).toHaveLength(50);
+  // Every request carried both headers, unchanged.
+  for (const call of g.calls) {
+    const headers = call.init.headers as Record<string, string>;
+    expect(headers['X-API-Key']).toBe('test-key');
+    expect(headers['X-Trace']).toBe('abc');
+  }
+});

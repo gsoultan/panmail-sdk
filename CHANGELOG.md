@@ -104,6 +104,17 @@ The four language packages share a version number and are released together.
   `testdata/event-types.json` is generated from the proto by
   `scripts/sync-status.py` and asserted by all four suites, so the next value
   the gateway adds fails four test runs rather than none.
+- **The thread-safety the docs promise is now tested.** Go's `Client` says
+  "Safe for concurrent use" and Java's says "immutable and safe for concurrent
+  use"; nothing in any language exercised a client from more than one thread.
+  Go now sends from eight goroutines under `-race`, which makes the claim
+  enforceable rather than aspirational — verified by adding a write to the
+  shared headers map, which the race detector catches immediately. Java does
+  the same across a thread pool. Node reuses one client across fifty concurrent
+  sends: not a data race there, but the headers object and endpoint are shared
+  across every await.
+
+  PHP has no equivalent and no such claim, so it has no such test.
 - **Coverage is measured, and what it found is now tested.** Go was at 88.5%:
   `Error()` and `Unwrap()` on every refusal type at zero, and both
   `WithHTTPClient` and `WithTimeout` never exercised at all. `Unwrap` mattered
