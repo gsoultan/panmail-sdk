@@ -219,8 +219,8 @@ here.
 > your own record of the `messageId` you stored at send time.
 
 Specifying this, and adding signature verification to the four clients once it
-is, is [tracked](https://github.com/gsoultan/panmail-sdk/issues) rather than
-quietly assumed to be somebody's problem.
+is, is [tracked in #12](https://github.com/gsoultan/panmail-sdk/issues/12)
+rather than quietly assumed to be somebody's problem.
 
 ---
 
