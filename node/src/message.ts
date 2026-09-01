@@ -15,9 +15,36 @@ export const Status = {
    * webhooks.
    */
   Pending: 'EMAIL_EVENT_TYPE_PENDING',
+
+  /**
+   * The rest are what the gateway reports afterwards, on the event stream and
+   * through webhooks, keyed by result.messageId. A send never returns them.
+   *
+   * Bounced is the general refusal; HardBounce and SoftBounce are the gateway
+   * saying which kind, when the provider told it. A hard bounce is an address
+   * that will never accept mail and should be suppressed; a soft one is a
+   * mailbox that was full or a server that was down.
+   */
   Sent: 'EMAIL_EVENT_TYPE_SENT',
   Delivered: 'EMAIL_EVENT_TYPE_DELIVERED',
+  Opened: 'EMAIL_EVENT_TYPE_OPENED',
+  Clicked: 'EMAIL_EVENT_TYPE_CLICKED',
+  Bounced: 'EMAIL_EVENT_TYPE_BOUNCED',
+  HardBounce: 'EMAIL_EVENT_TYPE_HARD_BOUNCE',
+  SoftBounce: 'EMAIL_EVENT_TYPE_SOFT_BOUNCE',
+  SpamReport: 'EMAIL_EVENT_TYPE_SPAM_REPORT',
+  Unsubscribed: 'EMAIL_EVENT_TYPE_UNSUBSCRIBED',
   Dropped: 'EMAIL_EVENT_TYPE_DROPPED',
+  Rejected: 'EMAIL_EVENT_TYPE_REJECTED',
+  Deferred: 'EMAIL_EVENT_TYPE_DEFERRED',
+  Complained: 'EMAIL_EVENT_TYPE_COMPLAINED',
+
+  /**
+   * protobuf's zero value, not a state a message is ever in. Here because the
+   * gateway's enum has it, and a client that quietly omitted a value would be
+   * the start of the two drifting.
+   */
+  Unspecified: 'EMAIL_EVENT_TYPE_UNSPECIFIED',
 } as const;
 
 export type Status = (typeof Status)[keyof typeof Status] | (string & {});

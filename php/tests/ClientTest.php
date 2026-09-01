@@ -603,4 +603,30 @@ final class ClientTest extends TestCase
 
         self::assertInstanceOf(Client::class, $client);
     }
+
+    /**
+     * The gateway's enum is the source of truth and the fixture is generated
+     * from it by scripts/sync-status.py. Exposing a value the gateway does not
+     * have, or missing one it does, is how a caller ends up writing the string
+     * by hand.
+     */
+    public function testStatusConstantsMatchTheSharedFixture(): void
+    {
+        $raw = file_get_contents(__DIR__ . '/../../testdata/event-types.json');
+        self::assertIsString($raw);
+
+        /** @var array{constants: array<string, string>} $fixture */
+        $fixture = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+
+        $exported = (new \ReflectionClass(Status::class))->getConstants();
+
+        // Sorted because declaration order is not the contract — the set of
+        // names and the string each maps to is.
+        $expected = $fixture['constants'];
+        ksort($expected);
+        ksort($exported);
+
+        self::assertSame($expected, $exported);
+    }
+
 }

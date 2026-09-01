@@ -494,3 +494,32 @@ describe('http away from loopback', () => {
     });
   }
 });
+
+// The gateway's enum is the source of truth and the fixture is generated from
+// it by scripts/sync-status.py. Exposing a value the gateway does not have, or
+// missing one it does, is how a caller ends up writing the string by hand.
+describe('the shared event-type fixture', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('../../testdata/event-types.json', import.meta.url), 'utf8'),
+  ) as { constants: Record<string, string> };
+
+  const camel = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/_(.)/g, (_, c: string) => c.toUpperCase())
+      .replace(/^./, (c) => c.toUpperCase());
+
+  test('every gateway event type is exposed, with the gateway spelling', () => {
+    for (const [name, wire] of Object.entries(fixture.constants)) {
+      expect(Status[camel(name) as keyof typeof Status]).toBe(wire);
+    }
+  });
+
+  test('nothing is exposed that the gateway does not have', () => {
+    const expected = new Set(Object.values(fixture.constants));
+    for (const value of Object.values(Status)) {
+      expect(expected).toContain(value);
+    }
+    expect(Object.keys(Status).length).toBe(Object.keys(fixture.constants).length);
+  });
+});

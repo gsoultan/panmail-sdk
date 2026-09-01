@@ -720,3 +720,46 @@ func TestNewRequiresHTTPSAwayFromLoopback(t *testing.T) {
 		}
 	}
 }
+
+// The gateway's enum is the source of truth and the fixture is generated from
+// it by scripts/sync-status.py. Exposing a value the gateway does not have, or
+// missing one it does, is how a caller ends up writing the string by hand.
+func TestStatusConstantsMatchTheSharedFixture(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "event-types.json"))
+	if err != nil {
+		t.Fatalf("reading the shared fixture: %v", err)
+	}
+	var fixture struct {
+		Constants map[string]string `json:"constants"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parsing the shared fixture: %v", err)
+	}
+
+	exported := map[string]panmail.Status{
+		"UNSPECIFIED": panmail.StatusUnspecified, "SENT": panmail.StatusSent,
+		"DELIVERED": panmail.StatusDelivered, "OPENED": panmail.StatusOpened,
+		"CLICKED": panmail.StatusClicked, "BOUNCED": panmail.StatusBounced,
+		"HARD_BOUNCE": panmail.StatusHardBounce, "SOFT_BOUNCE": panmail.StatusSoftBounce,
+		"SPAM_REPORT": panmail.StatusSpamReport, "UNSUBSCRIBED": panmail.StatusUnsubscribed,
+		"DROPPED": panmail.StatusDropped, "REJECTED": panmail.StatusRejected,
+		"PENDING": panmail.StatusPending, "DEFERRED": panmail.StatusDeferred,
+		"COMPLAINED": panmail.StatusComplained,
+	}
+
+	for name, want := range fixture.Constants {
+		got, ok := exported[name]
+		if !ok {
+			t.Errorf("the gateway has %s and this client does not", name)
+			continue
+		}
+		if string(got) != want {
+			t.Errorf("Status%s = %q, want %q", name, got, want)
+		}
+	}
+	for name := range exported {
+		if _, ok := fixture.Constants[name]; !ok {
+			t.Errorf("this client exposes %s and the gateway does not", name)
+		}
+	}
+}

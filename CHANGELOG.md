@@ -88,6 +88,16 @@ The four language packages share a version number and are released together.
 
 ### Added
 
+- **All fifteen of the gateway's event types are now exposed as `Status`
+  constants**, in every client. Four were: `Pending`, `Sent`, `Delivered`,
+  `Dropped`. `docs/WIRE.md` told readers they would see
+  `EMAIL_EVENT_TYPE_BOUNCED` on the event stream, and no client had a constant
+  for it — so anyone handling a bounce wrote the string by hand. Missing along
+  with it: opened, clicked, the hard and soft bounce split, spam reports,
+  unsubscribes, rejections, deferrals and complaints.
+  `testdata/event-types.json` is generated from the proto by
+  `scripts/sync-status.py` and asserted by all four suites, so the next value
+  the gateway adds fails four test runs rather than none.
 - `scripts/check.sh` runs everything CI runs, for whichever of the four
   toolchains are installed, and lists what it skipped rather than letting a
   partial run look complete.

@@ -14,9 +14,32 @@ const (
 	// through events and webhooks.
 	StatusPending Status = "EMAIL_EVENT_TYPE_PENDING"
 
-	StatusSent      Status = "EMAIL_EVENT_TYPE_SENT"
-	StatusDelivered Status = "EMAIL_EVENT_TYPE_DELIVERED"
-	StatusDropped   Status = "EMAIL_EVENT_TYPE_DROPPED"
+	// The rest are what the gateway reports afterwards, on the event stream and
+	// through webhooks, keyed by Result.MessageID. A Send never returns them.
+	//
+	// StatusBounced is the general refusal; StatusHardBounce and
+	// StatusSoftBounce are the gateway saying which kind, when the provider
+	// told it. A hard bounce is an address that will never accept mail and
+	// should be suppressed; a soft one is a mailbox that was full or a server
+	// that was down.
+	StatusSent         Status = "EMAIL_EVENT_TYPE_SENT"
+	StatusDelivered    Status = "EMAIL_EVENT_TYPE_DELIVERED"
+	StatusOpened       Status = "EMAIL_EVENT_TYPE_OPENED"
+	StatusClicked      Status = "EMAIL_EVENT_TYPE_CLICKED"
+	StatusBounced      Status = "EMAIL_EVENT_TYPE_BOUNCED"
+	StatusHardBounce   Status = "EMAIL_EVENT_TYPE_HARD_BOUNCE"
+	StatusSoftBounce   Status = "EMAIL_EVENT_TYPE_SOFT_BOUNCE"
+	StatusSpamReport   Status = "EMAIL_EVENT_TYPE_SPAM_REPORT"
+	StatusUnsubscribed Status = "EMAIL_EVENT_TYPE_UNSUBSCRIBED"
+	StatusDropped      Status = "EMAIL_EVENT_TYPE_DROPPED"
+	StatusRejected     Status = "EMAIL_EVENT_TYPE_REJECTED"
+	StatusDeferred     Status = "EMAIL_EVENT_TYPE_DEFERRED"
+	StatusComplained   Status = "EMAIL_EVENT_TYPE_COMPLAINED"
+
+	// StatusUnspecified is protobuf's zero value, not a state a message is
+	// ever in. It is here because the gateway's enum has it, and a client that
+	// quietly omitted a value would be the start of the two drifting.
+	StatusUnspecified Status = "EMAIL_EVENT_TYPE_UNSPECIFIED"
 )
 
 // Result is what the gateway accepted.

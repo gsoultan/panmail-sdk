@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Spliterators;
@@ -648,6 +649,34 @@ class PanmailClientTest {
                     () -> PanmailClient.builder().baseUrl(baseUrl).apiKey("k").build(),
                     baseUrl + " was refused");
         }
+    }
+
+    /**
+     * The gateway's enum is the source of truth and the fixture is generated
+     * from it by scripts/sync-status.py. Exposing a value the gateway does not
+     * have, or missing one it does, is how a caller ends up writing the string
+     * by hand.
+     */
+    @Test
+    void statusConstantsMatchTheSharedFixture() throws Exception {
+        JsonNode constants = MAPPER
+                .readTree(Files.readString(Path.of("..", "testdata", "event-types.json")))
+                .path("constants");
+
+        Map<String, String> exported = new LinkedHashMap<>();
+        for (java.lang.reflect.Field field : Status.class.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
+                exported.put(field.getName(), (String) field.get(null));
+            }
+        }
+
+        // fieldNames() rather than fields(): the latter is deprecated as of
+        // Jackson 2.22, and -Werror is not a suggestion.
+        Map<String, String> expected = new LinkedHashMap<>();
+        constants.fieldNames()
+                .forEachRemaining(name -> expected.put(name, constants.path(name).asText()));
+
+        assertEquals(expected, exported);
     }
 
 }

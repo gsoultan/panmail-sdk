@@ -57,6 +57,12 @@ tell a deliberate choice from an accident.
 
 ## What the four must agree on
 
+`testdata/event-types.json` is the gateway's `EmailEventType` enum, generated
+from the proto by `scripts/sync-status.py` and read by every suite. Run that
+after `sync-proto.sh`; the constants themselves stay hand-written, because
+there is no code generator in this build and adding one to keep fifteen strings
+in step would be the wrong trade.
+
 `testdata/content-types.json` is the extension-to-content-type mapping, and
 every client reads it in its own test suite. It exists because the four had
 already drifted on it once. If you add an extension, add it there — not to four
