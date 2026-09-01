@@ -102,6 +102,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # One at a time, so the first leg populates the Maven cache and the
+      # second restores it. Run in parallel they both fetch from Maven Central
+      # on a cold cache — which is every run after a pom change — and Central
+      # answers one of them with a 403. That is its rate limit, not a transient
+      # network fault, so Maven's retry handler does not retry it: 403 is not a
+      # retryable status by HTTP semantics. It cost a red main once already.
+      #
+      # The job takes about thirty seconds. Serialising it is cheaper than a
+      # failure people learn to re-run reflexively, which is how a real one
+      # gets waved through.
+      max-parallel: 1
       matrix:
         java: ['17', '21']
     defaults:
