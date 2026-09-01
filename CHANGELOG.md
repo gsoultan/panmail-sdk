@@ -88,6 +88,12 @@ The four language packages share a version number and are released together.
 
 ### Added
 
+- `docs/WIRE.md` has a section on delivery events, and says plainly that
+  webhooks are not specified and not covered by the SDKs. `SECURITY.md` gained
+  a "what the SDKs do not cover" section saying the same: with no signature
+  scheme, a webhook endpoint is an unauthenticated write path, and an event
+  should be confirmed against the `messageId` you stored at send time. Tracked
+  in #12.
 - **All fifteen of the gateway's event types are now exposed as `Status`
   constants**, in every client. Four were: `Pending`, `Sent`, `Delivered`,
   `Dropped`. `docs/WIRE.md` told readers they would see

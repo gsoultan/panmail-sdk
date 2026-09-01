@@ -66,6 +66,18 @@ security property, but the same reasoning: sending is not idempotent and the
 gateway has no de-duplication key, so a retry after a timeout may be a second
 copy of a message already on its way to a recipient.
 
+## What the SDKs do not cover
+
+**Webhooks.** Delivery events reach your application through a webhook, and
+neither the SDKs nor `docs/WIRE.md` say anything about how to verify one. There
+is no signature scheme specified, so there is nothing for a client to check.
+
+Until there is, a webhook endpoint is an unauthenticated write path: an event
+claiming a message bounced is something anyone who finds the URL can send. Do
+not let one drive a suppression, a refund or a resend on its own — check it
+against the `messageId` you stored when you sent, and treat anything you cannot
+match as untrusted.
+
 ## What checks this
 
 The properties above are each held by a test in all four languages, so a change

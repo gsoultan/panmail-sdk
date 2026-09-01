@@ -195,6 +195,35 @@ get it wrong.
 
 ---
 
+## Delivery events and webhooks
+
+Everything above is the *send*. What happens to a message afterwards is
+reported separately, keyed by the `messageId` a send returned, as one of the
+values of `EmailEventType` in
+[`event.proto`](../proto/panmail/v1/event.proto) — fifteen of them, from
+`EMAIL_EVENT_TYPE_SENT` through the hard and soft bounce split to
+`EMAIL_EVENT_TYPE_COMPLAINED`. The SDKs expose all fifteen as constants so a
+receiver can compare against them rather than spell them out.
+
+**The SDKs do not receive webhooks, and this document does not specify them.**
+That is a gap rather than a decision: the delivery of an event to your endpoint
+has a contract — a payload shape, and some way of telling a real event from
+anything else that can reach a public URL — and none of it is written down
+here.
+
+> **Until it is, treat the endpoint as unauthenticated.** A webhook receiver is
+> a public write path into your application. If nothing signs the request, an
+> event claiming a message bounced is a thing anyone can send you, and acting
+> on it — suppressing an address, marking an order unpaid, retrying a send —
+> is acting on input from a stranger. Confirm anything that matters against
+> your own record of the `messageId` you stored at send time.
+
+Specifying this, and adding signature verification to the four clients once it
+is, is [tracked](https://github.com/gsoultan/panmail-sdk/issues) rather than
+quietly assumed to be somebody's problem.
+
+---
+
 ## Generating your own client
 
 The three protos that make up `SendEmail`'s import closure are published in
