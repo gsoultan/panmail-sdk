@@ -18,6 +18,33 @@ one language out of four, while Go and PHP need no credentials at all and npm
 needs one token. The cost was in the release path rather than in the code, and
 it is in the git history if it is ever worth paying.
 
+### Added
+
+- **Webhook signature verification, in all three clients** — `VerifyWebhook`,
+  `Panmail\Webhook::verify`, `verifyWebhook`. Delivery events arrive as a
+  signed POST and nothing in the SDK could check one, so every receiver was
+  writing its own HMAC or, more likely, not writing one.
+
+  The scheme was read out of the gateway rather than invented: HMAC-SHA256 over
+  `timestamp + "." + raw_body`, hex, prefixed `sha256=`. The timestamp is
+  covered so a captured notification cannot be replayed later.
+
+  Each client compares in constant time, checks the timestamp window in **both**
+  directions, and **refuses a delivery carrying no signature** — which is the
+  one that matters, because the gateway delivers a subscription with no secret
+  unsigned rather than not delivering it, and accepting that would make the
+  whole exercise decorative.
+
+  `testdata/webhook-signatures.json` holds nine vectors computed independently
+  in Python and checked against the gateway's own `sign()`; all three suites
+  read them, so the three cannot drift on the one calculation where disagreeing
+  means silently rejecting real deliveries. Verified by changing a single hex
+  digit: Go, PHP and Node all fail.
+
+- `docs/WIRE.md` documents the webhook contract — headers, envelope, the four
+  things a verifier must do, and why the delivery id is what you deduplicate
+  on. Closes #12.
+
 ### Security
 
 - **A quadratic-backtracking regex trimmed the base URL's trailing slashes** in

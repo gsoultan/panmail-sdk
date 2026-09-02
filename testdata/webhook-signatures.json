@@ -1,0 +1,84 @@
+{
+  "_comment": [
+    "Known-good signatures for the gateway's webhook scheme, and the only place",
+    "the three clients' HMAC implementations are checked against each other.",
+    "",
+    "The scheme is: HMAC-SHA256 over the timestamp, a dot, then the raw body,",
+    "hex encoded and prefixed 'sha256='. It is implemented in the gateway at",
+    "internal/webhook/worker/delivery.go; these vectors were computed",
+    "independently by scripts/sync-webhook-vectors.py, so a client matching",
+    "them is agreeing with something other than itself.",
+    "",
+    "'body with a dot' exists because the timestamp and body are joined by one:",
+    "a body that starts with what looks like a prefix must not be confusable",
+    "with a different timestamp. 'whitespace matters' exists because the",
+    "signature covers bytes, not the JSON value they decode to. 'past the",
+    "32-bit boundary' is 2^31, where a client storing seconds in an int32 stops",
+    "agreeing with everyone else in 2038."
+  ],
+  "vectors": [
+    {
+      "name": "plain ascii",
+      "secret": "whsec_test",
+      "timestamp": 1700000000,
+      "body": "{\"event\":\"mail.bounced\"}",
+      "signature": "sha256=47732ff26df292bb8886e560ab794ba6be938383e626cd41ef026bedd499b8a6"
+    },
+    {
+      "name": "empty body",
+      "secret": "whsec_test",
+      "timestamp": 1700000000,
+      "body": "",
+      "signature": "sha256=5967f3c560522fa40cf2876ebc3c3a08551dd6959aaade3b413460591895bdcc"
+    },
+    {
+      "name": "zero timestamp",
+      "secret": "whsec_test",
+      "timestamp": 0,
+      "body": "{\"a\":1}",
+      "signature": "sha256=865923e2eac0d2f75d7f904929a647c6e05725f4d7595ea22b0304f42ba9eeec"
+    },
+    {
+      "name": "negative timestamp",
+      "secret": "whsec_test",
+      "timestamp": -1,
+      "body": "{\"a\":1}",
+      "signature": "sha256=6d951650ceb20bb8ef13436611f9d019eeb72c823cb77d768e2bfa515f75d74c"
+    },
+    {
+      "name": "non-ascii body",
+      "secret": "whsec_test",
+      "timestamp": 1700000000,
+      "body": "{\"subject\":\"héllo → wörld 🙂\"}",
+      "signature": "sha256=444d6d26570247c9de784c506d1c4d005abcd14274cacd073e9ce1aed3a853fd"
+    },
+    {
+      "name": "non-ascii secret",
+      "secret": "clé-secrète-🔑",
+      "timestamp": 1700000000,
+      "body": "{\"a\":1}",
+      "signature": "sha256=c451e8c99332bb8ec86dcbecce46793246af054d35928730accdd1769c2f826a"
+    },
+    {
+      "name": "body with a dot",
+      "secret": "whsec_test",
+      "timestamp": 1700000000,
+      "body": "1700000000.{\"a\":1}",
+      "signature": "sha256=519c4bfb0eb850545d17c5230e3d3c91de3df9bc9cbbca29c47aa79edcb96e28"
+    },
+    {
+      "name": "whitespace matters",
+      "secret": "whsec_test",
+      "timestamp": 1700000000,
+      "body": "{ \"a\" : 1 }",
+      "signature": "sha256=1879e945194c2ef52362897d4bff35441ba8f15d09cd01e07535c31bf09d3b08"
+    },
+    {
+      "name": "past the 32-bit boundary",
+      "secret": "whsec_test",
+      "timestamp": 2147483648,
+      "body": "{\"a\":1}",
+      "signature": "sha256=81d9d77fd3e9e5d665ff9881c5ef0ae0d3e93e85d1f3cd5cdd03c193286f5da2"
+    }
+  ]
+}

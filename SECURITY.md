@@ -65,17 +65,22 @@ security property, but the same reasoning: sending is not idempotent and the
 gateway has no de-duplication key, so a retry after a timeout may be a second
 copy of a message already on its way to a recipient.
 
-## What the SDKs do not cover
+## Webhooks
 
-**Webhooks.** Delivery events reach your application through a webhook, and
-neither the SDKs nor `docs/WIRE.md` say anything about how to verify one. There
-is no signature scheme specified, so there is nothing for a client to check.
+Delivery events arrive as a signed POST. `docs/WIRE.md` documents the scheme;
+the short version is HMAC-SHA256 over `timestamp + "." + raw_body`, with the
+timestamp signed so a captured notification cannot be replayed later.
 
-Until there is, a webhook endpoint is an unauthenticated write path: an event
-claiming a message bounced is something anyone who finds the URL can send. Do
-not let one drive a suppression, a refund or a resend on its own — check it
-against the `messageId` you stored when you sent, and treat anything you cannot
-match as untrusted.
+All three clients verify it, and each of these is a test rather than an
+intention: the comparison is constant time, the timestamp window is checked in
+**both** directions, and **a delivery carrying no signature is refused**. That
+last one matters more than it looks — the gateway delivers a subscription with
+no secret *unsigned* rather than not delivering it, so an unsigned request is a
+real thing that arrives at a real endpoint. Set a secret on the subscription.
+
+The signature covers the bytes that arrived. Read the raw body and verify
+before parsing: `express.json()` has already thrown those bytes away, and a
+re-serialised payload will not verify.
 
 ## What checks this
 

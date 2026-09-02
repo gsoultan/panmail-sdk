@@ -157,6 +157,35 @@ contract and the SMTP submission door in full — headers, field names, the
 `Retry-After` discrimination, SMTP reply codes and the Bcc-via-envelope rule.
 The protos are in [`proto/`](proto) if you would rather generate a client.
 
+## Receiving delivery events
+
+What happens to a message after it is queued arrives as a signed POST. Verify
+it before you act on it — the gateway delivers a subscription with no secret
+*unsigned*, so an unverified handler is one anyone who finds the URL can drive.
+
+```go
+body, _ := io.ReadAll(r.Body)          // the raw bytes: the signature covers them
+event, err := panmail.VerifyWebhook(os.Getenv("PANMAIL_WEBHOOK_SECRET"), r.Header, body)
+if err != nil {
+    http.Error(w, "", http.StatusUnauthorized)
+    return
+}
+log.Println(event.Event, event.TenantID, event.DeliveryID)
+```
+
+```php
+$event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('php://input'));
+```
+
+```ts
+// express.raw({ type: 'application/json' }) — express.json() discards the bytes
+const event = verifyWebhook(secret, req.headers, req.body);
+```
+
+`event.deliveryId` is stable across retries, and the gateway does retry: store
+it and ignore a repeat, or a bounce will suppress an address more than once.
+The full contract is in [`docs/WIRE.md`](docs/WIRE.md).
+
 ## Your API key
 
 A key is a sending credential for a whole tenant, so the clients treat it as

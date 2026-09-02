@@ -205,22 +205,86 @@ values of `EmailEventType` in
 `EMAIL_EVENT_TYPE_COMPLAINED`. The SDKs expose all fifteen as constants so a
 receiver can compare against them rather than spell them out.
 
-**The SDKs do not receive webhooks, and this document does not specify them.**
-That is a gap rather than a decision: the delivery of an event to your endpoint
-has a contract — a payload shape, and some way of telling a real event from
-anything else that can reach a public URL — and none of it is written down
-here.
+Those events reach your application as an HTTP POST to a URL you register.
 
-> **Until it is, treat the endpoint as unauthenticated.** A webhook receiver is
-> a public write path into your application. If nothing signs the request, an
-> event claiming a message bounced is a thing anyone can send you, and acting
-> on it — suppressing an address, marking an order unpaid, retrying a send —
-> is acting on input from a stranger. Confirm anything that matters against
-> your own record of the `messageId` you stored at send time.
+### The request
 
-Specifying this, and adding signature verification to the three clients once it
-is, is [tracked in #12](https://github.com/gsoultan/panmail-sdk/issues/12)
-rather than quietly assumed to be somebody's problem.
+```
+POST https://your-app.example.com/hooks/panmail
+Content-Type: application/json
+X-Panmail-Event: mail.bounced
+X-Panmail-Delivery: 0193b2f1-...
+X-Panmail-Timestamp: 1700000000
+X-Panmail-Signature: sha256=7efcc11dba053daf...
+```
+
+| Header | What it is |
+| --- | --- |
+| `X-Panmail-Event` | A dotted name — `mail.sent`, `mail.bounced`. **Not** an `EMAIL_EVENT_TYPE_*` value: those name delivery states, these name events. Lets you route without parsing the body. |
+| `X-Panmail-Delivery` | Stable across retries of the same notification. This is what you deduplicate on. |
+| `X-Panmail-Timestamp` | Unix seconds. The second half of what is signed. |
+| `X-Panmail-Signature` | `sha256=` followed by the HMAC, hex encoded. |
+
+The body is an envelope with the event-specific payload inside it:
+
+```json
+{
+  "event": "mail.bounced",
+  "tenant_id": "3f1c2b7a-0000-4000-8000-000000000001",
+  "timestamp": 1700000000,
+  "data": { "messageId": "0193b2f1-...", "reason": "mailbox full" }
+}
+```
+
+### Verifying it
+
+```
+signature = "sha256=" + hex(HMAC_SHA256(secret, timestamp + "." + raw_body))
+```
+
+The timestamp is inside the signed material, not just alongside it. Signing the
+body alone would mean a notification captured once could be replayed forever
+against the same signature; with the timestamp covered, a receiver checks it is
+recent and the signature proves it was not moved.
+
+Four things a verifier has to do, and each of them matters:
+
+1. **Compare in constant time.** A byte-by-byte comparison that returns early
+   tells an attacker how much of a guess was right.
+2. **Check the timestamp is recent, in both directions.** Only checking the
+   past lets a forged future timestamp keep a capture valid indefinitely. Five
+   minutes is a reasonable window; wider is weaker.
+3. **Use the bytes as they arrived.** The signature covers what was sent, down
+   to key order and whitespace. Re-serialising a parsed payload will not
+   verify — read the raw body first and decode afterwards.
+4. **Refuse a delivery with no signature.** A subscription with no secret is
+   delivered *unsigned* rather than not delivered, so this is a real request
+   arriving at a real endpoint. Accepting it makes the whole exercise
+   decorative. Set a secret on the subscription.
+
+The SDKs do all four:
+
+```go
+event, err := panmail.VerifyWebhook(secret, r.Header, body)
+```
+```php
+$event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('php://input'));
+```
+```ts
+const event = verifyWebhook(secret, req.headers, req.body);
+```
+
+[`testdata/webhook-signatures.json`](../testdata/webhook-signatures.json) holds
+known-good vectors if you are implementing this yourself.
+
+### Retries, and why you need the delivery id
+
+The gateway retries a delivery that fails, backing off, and treats a 4xx other
+than 408 and 429 as a permanent refusal — it has looked at your response and
+believed you. `X-Panmail-Delivery` is stable across every retry of the same
+notification, so store it and ignore a repeat. Without that, a bounce handler
+that suppresses an address will suppress it several times, and one that issues
+a refund will issue several.
 
 ---
 

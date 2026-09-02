@@ -9,3 +9,12 @@ export {
   RateLimitedError,
   TransportError,
 } from './errors.js';
+export {
+  DEFAULT_WEBHOOK_TOLERANCE_MS,
+  WebhookError,
+  WebhookHeaders,
+  verifyWebhook,
+  type VerifyWebhookOptions,
+  type WebhookEvent,
+  type WebhookHeaderSource,
+} from './webhook.js';
