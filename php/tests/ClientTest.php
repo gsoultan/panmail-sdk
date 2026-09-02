@@ -149,7 +149,7 @@ final class ClientTest extends TestCase
         self::assertSame('%PDF-1.4', base64_decode($attachment['content'], true));
     }
 
-    // A UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet. All four
+    // A UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet. All three
     // clients send the same header for the same file.
     public function testTextAttachmentsDeclareTheirCharset(): void
     {
@@ -483,7 +483,7 @@ final class ClientTest extends TestCase
     }
 
     /**
-     * The mapping all four clients share, read from one file rather than
+     * The mapping all three clients share, read from one file rather than
      * repeated here. A change to one implementation that the others do not
      * follow turns three languages red instead of sending the gateway four
      * different Content-Type headers for the same attachment.

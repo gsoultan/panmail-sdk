@@ -25,7 +25,6 @@
     "archive": {
         "comment": "The other three languages are not part of the PHP package.",
         "exclude": [
-            "/java",
             "/node",
             "/proto",
             "/scripts",

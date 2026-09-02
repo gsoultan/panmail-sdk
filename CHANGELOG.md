@@ -4,22 +4,24 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-The four language packages share a version number and are released together.
+The three language packages share a version number and are released together.
 
 ## [Unreleased]
 
-Nothing yet.
+The first release, in Go, PHP and Node. Nothing has been tagged yet, so
+everything here is still unreleased.
 
-## [0.1.0-rc.1] — 2026-09-02
-
-A release candidate, so that the first time `npm publish` and `mvn deploy`
-run is against a version number nobody wanted. Everything below is the
-first release of the four clients.
+A Java client existed during development and was removed before any release.
+Publishing it meant Maven Central, which meant verifying the
+`io.github.gsoultan` namespace with Sonatype — approval measured in days, for
+one language out of four, while Go and PHP need no credentials at all and npm
+needs one token. The cost was in the release path rather than in the code, and
+it is in the git history if it is ever worth paying.
 
 ### Security
 
 - **A quadratic-backtracking regex trimmed the base URL's trailing slashes** in
-  the Node and Java clients (`/\/+$/` and `replaceAll("/+$", "")`). Anchored at
+  the Node client (`/\/+$/`). Anchored at
   the end but not the start, so on a URL that is mostly slashes the engine
   retries from every slash: 80,000 of them took 2.3 seconds in Node, against
   nothing for a loop. Found by CodeQL on its first run, and rated high. The base
@@ -31,11 +33,11 @@ first release of the four clients.
   `localhost`, `127.0.0.0/8` and `::1` stay allowed so local development is
   unaffected; anything else must be `https`. A side effect worth having: the
   cloud metadata endpoint `http://169.254.169.254/` is now refused too.
-- **A base URL carrying credentials is now refused by all four.** The URL
+- **A base URL carrying credentials is now refused by all three.** The URL
   travels into every error the client reports, and errors get logged. Node
   leaked a password that way: undici refuses such a URL, but by throwing a
   `TypeError` quoting the whole URL, which the client put in a
-  `TransportError` message. Go redacted it, Java and PHP accepted it silently —
+  `TransportError` message. Go redacted it and PHP accepted it silently —
   three different answers to one question. Userinfo is deprecated in RFC 3986
   for this exact reason.
 - **The PHP client was vulnerable to CRLF header injection.** `CurlTransport`
@@ -48,19 +50,17 @@ first release of the four clients.
   headers.
 
   Go and Node were not injectable — `net/http` and undici both refuse the
-  value — and Java was not either, but threw `IllegalArgumentException`, which
-  is outside the hierarchy its own documentation tells callers to catch. All
-  four now validate header names and values when the client is constructed, so
-  the failure is the same shape, with the same type, at the same point, in
-  every language.
+  value. All three now validate header names and values when the client is
+  constructed, so the failure is the same shape, with the same type, at the
+  same point, in every language.
 
 - **The API key is no longer forwarded across an HTTP redirect.** The key
   travels in `X-API-Key`, and a custom header is not on any HTTP client's list
   of credentials to drop when a redirect crosses to another host — that list
   knows about `Authorization` and `Cookie`. Go's `http.Client` and Node's
   `fetch` both followed redirects by default and both forwarded the key to the
-  new host. All four clients now refuse a redirect. Java additionally refuses a
-  caller-supplied `HttpClient` that is configured to follow one.
+  new host. All three clients now refuse a redirect, including one built
+  around a caller-supplied HTTP client.
 
 ### Fixed
 
@@ -79,7 +79,7 @@ first release of the four clients.
   `fetch()` settles as soon as the response line arrives, and the abort timer
   was cleared at that point, so a gateway that sent headers and then stalled
   held the caller open with no bound at all.
-- **Node, Java and PHP: a response is bounded at 1 MiB,** as Go already was. A
+- **Node and PHP: a response is bounded at 1 MiB,** as Go already was. A
   proxy error page where a send result was expected could otherwise be buffered
   whole.
 - **PHP: a malformed response no longer escapes the documented exception
@@ -90,9 +90,7 @@ first release of the four clients.
 - **PHP: `curl_close()` removed.** It has had no effect since PHP 8.0 and is
   deprecated in 8.5, where it made the suite emit a deprecation.
 - **Go: the `X-API-Key` header is now stripped from `WithHeader` case
-  insensitively,** matching the other three clients.
-- **Java: `timeout()` rejects a null, zero or negative duration** rather than
-  failing later inside `HttpClient`.
+  insensitively,** matching the other two clients.
 
 ### Added
 
@@ -110,17 +108,15 @@ first release of the four clients.
   with it: opened, clicked, the hard and soft bounce split, spam reports,
   unsubscribes, rejections, deferrals and complaints.
   `testdata/event-types.json` is generated from the proto by
-  `scripts/sync-status.py` and asserted by all four suites, so the next value
-  the gateway adds fails four test runs rather than none.
+  `scripts/sync-status.py` and asserted by all three suites, so the next value
+  the gateway adds fails three test runs rather than none.
 - **The thread-safety the docs promise is now tested.** Go's `Client` says
-  "Safe for concurrent use" and Java's says "immutable and safe for concurrent
-  use"; nothing in any language exercised a client from more than one thread.
-  Go now sends from eight goroutines under `-race`, which makes the claim
+  "Safe for concurrent use" and nothing exercised a client from more than one
+  goroutine. It now sends from eight under `-race`, which makes the claim
   enforceable rather than aspirational — verified by adding a write to the
-  shared headers map, which the race detector catches immediately. Java does
-  the same across a thread pool. Node reuses one client across fifty concurrent
-  sends: not a data race there, but the headers object and endpoint are shared
-  across every await.
+  shared headers map, which the race detector catches immediately. Node reuses
+  one client across fifty concurrent sends: not a data race there, but the
+  headers object and endpoint are shared across every await.
 
   PHP has no equivalent and no such claim, so it has no such test.
 - **Coverage is measured, and what it found is now tested.** Go was at 88.5%:
@@ -132,35 +128,28 @@ first release of the four clients.
   unreachable defensive branches.
 
   The same sweep found the documented `application/octet-stream` fallback
-  untested in all four, and a non-JSON 200 untested in Java and Node.
+  untested in all three, and a non-JSON 200 untested in Node.
 
-  Java was 94.4% with two public methods never called — the `templateData(Map)`
-  overload and the `Attachment(String, byte[])` constructor — now 95.3% with no
-  uncovered method left. PHP was 94.9%, including the guard that stops a
-  `JsonException` escaping its own exception hierarchy, which had no test at
-  all; now 99.1%.
+  PHP was 94.9%, including the guard that stops a `JsonException` escaping its
+  own exception hierarchy, which had no test at all; now 99.1%.
 
-  CI gates Go at 95%, PHP at 95% and Java at 90%. Node reports coverage without
-  a threshold, because bun enforces per file and the only floor that would pass
-  is low enough to let line coverage fall seventeen points in silence.
-- `scripts/check.sh` runs everything CI runs, for whichever of the four
+  CI gates Go and PHP at 95%. Node reports coverage without a threshold,
+  because bun enforces per file and the only floor that would pass is low
+  enough to let line coverage fall seventeen points in silence.
+- `scripts/check.sh` runs everything CI runs, for whichever of the three
   toolchains are installed, and lists what it skipped rather than letting a
   partial run look complete.
-- `testdata/content-types.json`: the extension-to-content-type mapping all four
-  clients guess from, written down once and read by all four test suites. The
+- `testdata/content-types.json`: the extension-to-content-type mapping all
+  three clients guess from, written down once and read by all three suites. The
   four had already drifted on it — Go returned `text/csv; charset=utf-8` where
   the others returned `text/csv` — and a per-language test for one extension
   fixed that case without preventing the next. Changing the fixture now fails
-  Go, PHP, Java and Node together.
-- CodeQL over Go, Java and TypeScript, on every push and weekly, with the
+  Go, PHP and Node together.
+- CodeQL over Go and TypeScript, on every push and weekly, with the
   `security-and-quality` queries. PHP is not analysed by CodeQL, which is why
   PHPStan runs at `max` on the shipped PHP.
 - Static analysis in CI: `golangci-lint` for Go and PHPStan for PHP, the latter
   at `max` on shipped code. Both earned their place on the first run.
-- Java compiles under `-Xlint:all -Werror`. It found seven exception classes
-  with no `serialVersionUID`: javac derives one from the shape of the class
-  when it is left out, so adding a field to an exception would stop a receiver
-  on an older version deserialising it.
 - Node: `noUnusedLocals`, `noUnusedParameters`, `noImplicitOverride`,
   `noImplicitReturns` and `noFallthroughCasesInSwitch`. `noImplicitOverride`
   found `TransportError` shadowing the `cause` that `Error` has carried since
@@ -173,11 +162,11 @@ first release of the four clients.
 - A `composer.json` at the repository root, which is the only one Packagist
   reads. `php/composer.json` stays as the development definition, and
   `PackageDefinitionTest` fails if the two drift apart.
-- Release automation: a `v*` tag publishes to npm (with provenance) and Maven
-  Central, after checking the tag agrees with both manifests. Go and PHP are
-  served from the tag itself.
-- The Java POM now carries what Maven Central requires — `developers`, `scm`,
-  and a `release` profile that attaches sources, javadoc and signatures.
+- Release automation: a `v*` tag publishes to npm with provenance, after
+  checking the tag agrees with `node/package.json`. Go and PHP are served from
+  the tag itself, by the module proxy and Packagist. The same workflow runs as
+  a dry run from the Actions tab, so the publish path is exercised before a tag
+  makes it irreversible.
 - npm package metadata: `repository`, `homepage`, `bugs`, `author`,
   `sideEffects`, and a `prepublishOnly` build so a publish cannot ship a stale
   `dist/`.

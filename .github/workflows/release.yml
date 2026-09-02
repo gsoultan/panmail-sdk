@@ -1,9 +1,9 @@
 name: Release
 
-# One tag releases all four packages, because they share a version number.
+# One tag releases all three packages, because they share a version number.
 # Go needs nothing here — the module proxy serves whatever the tag points at —
-# and PHP is served by Packagist from the repository itself. Only npm and
-# Maven Central need something pushed to them.
+# and PHP is served by Packagist from the repository itself. Only npm needs
+# something pushed to it.
 #
 # The same workflow runs as a dry run from the Actions tab. Deliberately the
 # same one: a separate dry-run workflow is a copy, and a copy drifts until it
@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 jobs:
-  # A tag that disagrees with the manifests would publish a version nobody can
+  # A tag that disagrees with the manifest would publish a version nobody can
   # trace back. Cheaper to find out here than after it is on a registry, where
   # a version number cannot be reused.
   check-version:
@@ -35,32 +35,24 @@ jobs:
       - id: version
         run: |
           node_version="$(node -p 'require("./node/package.json").version')"
-          # Parsed rather than grepped: <version> appears several times in a
-          # pom and only the project's own sits at the root.
-          java_version="$(python3 -c "import xml.etree.ElementTree as ET; print(ET.parse('java/pom.xml').getroot().find('{http://maven.apache.org/POM/4.0.0}version').text)")"
 
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            version="${GITHUB_REF_NAME#v}"
-            echo "releasing $version; checking the manifests agree with the tag"
-          else
-            # A dry run has no tag to check against, so the manifests are
-            # checked against each other — which is the half of this that
-            # catches a half-finished version bump.
-            version="$node_version"
-            echo "dry run at $version; checking the manifests agree with each other"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            # A dry run has no tag to check against. node/package.json is the
+            # only manifest carrying a version now, so there is nothing to
+            # cross-check it with and nothing to fail on.
+            echo "dry run at $node_version"
+            echo "version=$node_version" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          version="${GITHUB_REF_NAME#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "releasing $version; checking the manifest agrees with the tag"
 
-          fail=0
           if [ "$node_version" != "$version" ]; then
-            echo "::error::node/package.json is $node_version, expected $version"
-            fail=1
+            echo "::error::node/package.json is $node_version, tag is $version"
+            exit 1
           fi
-          if [ "$java_version" != "$version" ]; then
-            echo "::error::java/pom.xml is $java_version, expected $version"
-            fail=1
-          fi
-          exit "$fail"
 
   npm:
     needs: check-version
@@ -116,35 +108,3 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  maven:
-    needs: check-version
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: java
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
-          server-id: central
-          server-username: MAVEN_CENTRAL_USERNAME
-          server-password: MAVEN_CENTRAL_PASSWORD
-          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
-
-      # verify runs the whole lifecycle short of deploying: the tests, and the
-      # sources and javadoc jars Maven Central will not accept a release
-      # without. Signing is skipped because a dry run has no key to sign with.
-      - name: Verify the release build (dry run)
-        if: ${{ inputs.dry_run }}
-        run: mvn --batch-mode -Prelease verify -Dgpg.skip=true
-      - name: Deploy to Maven Central
-        if: ${{ !inputs.dry_run }}
-        run: mvn --batch-mode -Prelease deploy
-        env:
-          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}

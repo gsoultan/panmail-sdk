@@ -1,10 +1,10 @@
 {
   "_comment": [
     "The content type each client guesses from a filename extension, and the",
-    "only place that mapping is written down for all four. Every client reads",
+    "only place that mapping is written down for all three. Every client reads",
     "this file in its own test suite, so a change to one implementation that",
-    "the others do not follow turns three languages red rather than shipping a",
-    "gateway four different Content-Type headers for the same attachment.",
+    "the others do not follow turns two languages red rather than shipping a",
+    "gateway three different Content-Type headers for the same attachment.",
     "",
     "The text types carry a charset. Go's mime package appends one to every",
     "text/* it returns, and it is the better answer anyway: a text attachment",

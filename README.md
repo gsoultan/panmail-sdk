@@ -1,9 +1,9 @@
 # panmail-sdk
 
 Clients for sending mail through a [panmail](https://github.com/gsoultan/panmail)
-gateway, in Go, PHP, Java and Node.
+gateway, in Go, PHP and Node.
 
-All four are the same small library in four languages: **one call**, typed
+All three are the same small library in three languages: **one call**, typed
 refusals you can act on, and a deliberate refusal to retry anything whose
 outcome is unknown. None of them depends on the gateway's source — they speak
 [the wire contract](docs/WIRE.md), which is also what you want if you would
@@ -13,7 +13,6 @@ rather POST JSON yourself or send over SMTP.
 | --- | --- | --- | --- |
 | **Go** | `github.com/gsoultan/panmail-sdk` | `go get github.com/gsoultan/panmail-sdk` | none — stdlib only |
 | **PHP** | `gsoultan/panmail-sdk` | `composer require gsoultan/panmail-sdk` | ext-curl, ext-json |
-| **Java** | `io.github.gsoultan:panmail-sdk` | Maven / Gradle | jackson-databind |
 | **Node** | `@gsoultan/panmail-sdk` | `npm i @gsoultan/panmail-sdk` | none — `fetch` |
 
 ## Getting a key
@@ -78,25 +77,6 @@ try {
 }
 ```
 
-## Java
-
-```java
-PanmailClient client = PanmailClient.builder()
-        .baseUrl("https://mail.example.com")
-        .apiKey(System.getenv("PANMAIL_API_KEY"))
-        .build();
-
-Result result = client.send(Message.builder()
-        .providerId("0f8b...")
-        .from("noreply@example.com")
-        .to("someone@example.org")
-        .subject("Your receipt")
-        .html("<p>Thanks for your order.</p>")
-        .build());
-
-System.out.println("queued " + result.messageId());
-```
-
 ## Node
 
 ```ts
@@ -136,12 +116,12 @@ Both answer `resource_exhausted` / HTTP 429, on purpose: they are the same
 answer to you — *you are asking for more than you may have.* What separates
 them is whether the gateway attached a delay.
 
-| Refusal | Go | PHP | Java | Node |
-| --- | --- | --- | --- | --- |
-| Over the send rate | `*RateLimitedError` | `RateLimitedException` | `RateLimitedException` | `RateLimitedError` |
-| Backlog full | `*BacklogFullError` | `BacklogFullException` | `BacklogFullException` | `BacklogFullError` |
-| Key rejected | `*AuthError` | `AuthException` | `AuthException` | `AuthError` |
-| Anything else | `*APIError` | `ApiException` | `ApiException` | `ApiError` |
+| Refusal | Go | PHP | Node |
+| --- | --- | --- | --- |
+| Over the send rate | `*RateLimitedError` | `RateLimitedException` | `RateLimitedError` |
+| Backlog full | `*BacklogFullError` | `BacklogFullException` | `BacklogFullError` |
+| Key rejected | `*AuthError` | `AuthException` | `AuthError` |
+| Anything else | `*APIError` | `ApiException` | `ApiError` |
 
 A **rate limit** carries a delay and is safe to repeat after it.
 
@@ -163,7 +143,6 @@ the message — which every SDK will wait out if you ask:
 ```go
 panmail.New(url, key, panmail.WithRateLimitRetries(3))                  // Go
 new Client($url, $key, ['rateLimitRetries' => 3]);                      // PHP
-PanmailClient.builder().rateLimitRetries(3)                             // Java
 new PanmailClient(url, key, { rateLimitRetries: 3 })                    // Node
 ```
 
@@ -207,7 +186,6 @@ not set `X-API-Key`, case insensitively.
 ```bash
 go test -race ./...                  # Go
 cd php  && composer test             # PHP
-cd java && mvn --batch-mode test     # Java
 cd node && bun test src              # Node
 ```
 

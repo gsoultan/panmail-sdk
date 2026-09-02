@@ -43,7 +43,7 @@ final class Attachment
         return match ($extension) {
             'pdf' => 'application/pdf',
             // The text types carry a charset, because Go's mime package appends
-            // one to every text/* it returns and four clients of one gateway
+            // one to every text/* it returns and three clients of one gateway
             // should not disagree about a header. It is also the better answer:
             // a text attachment with no declared encoding is one the mail
             // client has to guess at, and a UTF-8 CSV guessed as latin-1 is

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs everything CI runs, for whichever of the four toolchains are installed.
+# Runs everything CI runs, for whichever of the three toolchains are installed.
 #
-# Nobody has all four to hand, and a contributor who has only Go should not be
+# Nobody has all three to hand, and a contributor who has only Go should not be
 # blocked — but they should be told what went unchecked rather than left to
 # assume a green run covered everything. Missing toolchains are skipped and
 # listed at the end; anything that actually ran and failed fails this script.
@@ -67,13 +67,6 @@ elif have php; then
     skipped+=('PHP (run: cd php && composer install)')
 else
     skipped+=('PHP (no php)')
-fi
-
-echo 'Java'
-if have mvn; then
-    run 'mvn test' bash -c 'cd java && mvn --batch-mode test'
-else
-    skipped+=('Java (no mvn)')
 fi
 
 echo 'Node'

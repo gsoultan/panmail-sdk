@@ -8,9 +8,6 @@ php/.phpunit.result.cache
 php/composer.lock
 /composer.lock
 
-# Java
-java/target/
-
 # Node
 node/node_modules/
 node/dist/
@@ -21,4 +18,3 @@ node/dist/
 coverage.out
 node/coverage/
 php/coverage.xml
-java/target/site/

@@ -1,10 +1,10 @@
 # Contributing
 
-Four clients, one library. A change to how the client behaves is a change to
-all four — if you add a guard in Go, the same guard belongs in PHP, Java and
-Node, with the same reasoning written down in each. The test suites are
-deliberately parallel for the same reason: the test names read almost the same
-in every language, so a gap in one is visible next to the other three.
+Three clients, one library. A change to how the client behaves is a change to
+all three — if you add a guard in Go, the same guard belongs in PHP and Node,
+with the same reasoning written down in each. The test suites are deliberately
+parallel for the same reason: the test names read almost the same in every
+language, so a gap in one is visible next to the other two.
 
 ## Running everything
 
@@ -12,7 +12,6 @@ in every language, so a gap in one is visible next to the other three.
 | --- | --- | --- |
 | Go | none — stdlib only | `go test -race ./...` |
 | PHP | `cd php && composer install` | `composer test` |
-| Java | JDK 17+ | `cd java && mvn --batch-mode test` |
 | Node | `cd node && bun install` | `bun test src` |
 
 Before opening a pull request:
@@ -31,7 +30,6 @@ go vet ./...
 go test -race ./...
 golangci-lint run ./...
 (cd php  && composer test && composer analyse)
-(cd java && mvn --batch-mode test)
 (cd node && bun x tsc -p tsconfig.json --noEmit && bun test src)
 (cd node && bun run build && bun run smoke && bun run check:types)
 ```
@@ -46,7 +44,7 @@ the current release.
 **A test that fails before it and passes after.** For a bug fix, say what the
 root cause was in one sentence in the commit message.
 
-**The same behaviour in all four languages,** or an explicit note in the pull
+**The same behaviour in all three languages,** or an explicit note in the pull
 request about why one is different.
 
 **Comments that say why, not what.** The existing code explains the reasoning
@@ -81,30 +79,31 @@ real gateway is caught by the contract test in the panmail repo.
 
 ## The wire contract
 
-`docs/WIRE.md` is the specification the four clients implement. A change to
+`docs/WIRE.md` is the specification the three clients implement. A change to
 what goes on the wire belongs there first.
 
 ## Releasing
 
-The four packages share a version number. Bump it in `node/package.json` and
-`java/pom.xml`, move the `Unreleased` section of `CHANGELOG.md` under the new
+The three packages share a version number, and `node/package.json` is the only
+manifest that carries one — Go takes it from the tag and PHP from Packagist.
+Bump it there, move the `Unreleased` section of `CHANGELOG.md` under the new
 version, then tag:
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-The tag publishes to npm and Maven Central. Go is served by the module proxy
-from the tag, and PHP by Packagist from the root `composer.json`. The release
-workflow refuses a tag that disagrees with either manifest, because a version
-number cannot be reused once a registry has it.
+The tag publishes to npm. Go is served by the module proxy from the tag, and
+PHP by Packagist from the root `composer.json`. The release workflow refuses a
+tag that disagrees with the manifest, because a version number cannot be reused
+once a registry has it.
 
 **A tag is a release for Go and PHP the moment it is pushed**, with no workflow
 and no credentials involved — the proxy and Packagist read the tag directly. So
-do not tag until the npm and Maven secrets are in place: a tag without them
-ships two of the four languages and fails the other two, which is precisely the
-version skew a shared version number exists to prevent. A Go module version
-cannot be withdrawn once the proxy has served it.
+do not tag until `NPM_TOKEN` is in place: a tag without it ships two of the
+three languages and fails the third, which is precisely the version skew a
+shared version number exists to prevent. A Go module version cannot be
+withdrawn once the proxy has served it.
 
 A prerelease version (`0.1.0-rc.1`) goes to npm's `next` dist-tag, and a stable
 one to `latest`, decided from the manifest rather than from a flag someone has
@@ -112,19 +111,16 @@ to remember. npm refuses a prerelease with no `--tag` at all, and answering
 that with `latest` would hand a release candidate to everyone running
 `npm install`.
 
-Publishing needs these repository secrets: `NPM_TOKEN`,
-`MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY`,
-`MAVEN_GPG_PASSPHRASE`.
+Publishing needs one repository secret: `NPM_TOKEN`.
 
 ## Coverage
 
-Three of the four gate a floor in CI:
+Two of the three gate a floor in CI:
 
 | | how | floor | where it sits |
 | --- | --- | --- | --- |
 | Go | `go tool cover` | 95% | 98.4% |
 | PHP | xdebug + `scripts/coverage-floor.py` | 95% | 99.1% |
-| Java | jacoco `check` | 90% | 95.3% |
 | Node | reported, not gated | — | 100% lines |
 
 They are floors, not targets. The last few percent of any of these clients are
@@ -133,9 +129,9 @@ reach them buys nothing — a marshal that cannot fail because its input was
 validated a function earlier is not a gap.
 
 What the floors are for is the other kind: before anyone measured, Go had every
-`Unwrap` at zero and two public options never called, Java had two public
-methods never called, and PHP had the guard against a `JsonException` escaping
-its own hierarchy untested. None were hard to test, only easy to forget.
+`Unwrap` at zero and two public options never called, and PHP had the guard
+against a `JsonException` escaping its own hierarchy untested. Neither was hard
+to test, only easy to forget.
 
 Node reports coverage and gates on nothing, deliberately — bun enforces per
 file, and the only floor that would pass is low enough to be meaningless. The

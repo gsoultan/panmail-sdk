@@ -126,7 +126,7 @@ export interface Message {
 const CONTENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   // The text types carry a charset, because Go's mime package appends one to
-  // every text/* it returns and four clients of one gateway should not disagree
+  // every text/* it returns and three clients of one gateway should not disagree
   // about a header. It is also the better answer: a text attachment with no
   // declared encoding is one the mail client has to guess at, and a UTF-8 CSV
   // guessed as latin-1 is mojibake in a spreadsheet.

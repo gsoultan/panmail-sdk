@@ -230,7 +230,7 @@ func TestSendBase64EncodesAttachmentContent(t *testing.T) {
 // A text attachment with no declared encoding is one the mail client has to
 // guess at, and a UTF-8 CSV guessed as latin-1 is mojibake in a spreadsheet.
 // Go's mime package appends the charset; the other three clients hard-code it
-// so that all four send the same header for the same file.
+// so that all three send the same header for the same file.
 func TestTextAttachmentsDeclareTheirCharset(t *testing.T) {
 	g := accepts(t)
 
@@ -595,7 +595,7 @@ func TestSendRefusesToFollowARedirect(t *testing.T) {
 	}
 }
 
-// contentTypeFixture is the mapping all four clients share. Reading it here
+// contentTypeFixture is the mapping all three clients share. Reading it here
 // rather than repeating it means a change to one implementation that the
 // others do not follow turns three languages red.
 func contentTypeFixture(t *testing.T) map[string]string {
@@ -679,7 +679,7 @@ func TestNewRejectsAHeaderThatWouldSplitTheRequest(t *testing.T) {
 // A url carrying a password travels into every error this client reports, and
 // an error is a thing that gets logged. Node's fetch refuses such a url by
 // throwing a TypeError that quotes the whole thing, password included, so the
-// leak is real rather than theoretical — all four refuse it up front instead.
+// leak is real rather than theoretical — all three refuse it up front instead.
 func TestNewRejectsCredentialsInTheBaseURL(t *testing.T) {
 	for _, baseURL := range []string{
 		"https://user:hunter2@mail.example.com",
@@ -766,11 +766,10 @@ func TestStatusConstantsMatchTheSharedFixture(t *testing.T) {
 }
 
 // Every refusal type's Error and Unwrap. Both were at zero coverage, which
-// matters most for Unwrap: Go is the only one of the four clients where the
-// Connect code is not on the refusal itself. PHP, Java and Node put code and
-// status on the subclass; here you have to unwrap to an *APIError to reach
-// them, so that chain is the documented path rather than an implementation
-// detail.
+// matters most for Unwrap: Go is the only one of the three clients where the
+// Connect code is not on the refusal itself. PHP and Node put code and status
+// on the subclass; here you have to unwrap to an *APIError to reach them, so
+// that chain is the documented path rather than an implementation detail.
 func TestRefusalsCarryTheirCauseAndReadWell(t *testing.T) {
 	cases := map[string]struct {
 		status     int

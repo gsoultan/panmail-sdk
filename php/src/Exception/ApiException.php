@@ -11,7 +11,7 @@ namespace Panmail\Exception;
  * "invalid_argument", "internal" and so on — and $status is the HTTP status it
  * arrived with.
  *
- * It is not called `$code`, as it is in the Go, Java and Node clients, because
+ * It is not called `$code`, as it is in the Go and Node clients, because
  * \Exception already declares `$code` as a non-readonly int. Redeclaring it as
  * a readonly string is a fatal error, not a warning.
  */
