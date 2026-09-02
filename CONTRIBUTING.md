@@ -99,6 +99,19 @@ from the tag, and PHP by Packagist from the root `composer.json`. The release
 workflow refuses a tag that disagrees with either manifest, because a version
 number cannot be reused once a registry has it.
 
+**A tag is a release for Go and PHP the moment it is pushed**, with no workflow
+and no credentials involved — the proxy and Packagist read the tag directly. So
+do not tag until the npm and Maven secrets are in place: a tag without them
+ships two of the four languages and fails the other two, which is precisely the
+version skew a shared version number exists to prevent. A Go module version
+cannot be withdrawn once the proxy has served it.
+
+A prerelease version (`0.1.0-rc.1`) goes to npm's `next` dist-tag, and a stable
+one to `latest`, decided from the manifest rather than from a flag someone has
+to remember. npm refuses a prerelease with no `--tag` at all, and answering
+that with `latest` would hand a release candidate to everyone running
+`npm install`.
+
 Publishing needs these repository secrets: `NPM_TOKEN`,
 `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `MAVEN_GPG_PRIVATE_KEY`,
 `MAVEN_GPG_PASSPHRASE`.
