@@ -41,6 +41,18 @@ it is in the git history if it is ever worth paying.
   means silently rejecting real deliveries. Verified by changing a single hex
   digit: Go, PHP and Node all fail.
 
+- **A comment in `ci.yml` claimed more protection than exists.** It said proto
+  drift from the gateway "is caught by the contract test in the panmail repo,
+  which runs this SDK against the real middleware". The test is real and does
+  send through the gateway's actual auth stack and usecase — but it is behind a
+  `//go:build sdkcontract` tag and needs a `go.work` pointing at a local
+  checkout, because the SDK is not a dependency of the gateway. It runs when
+  somebody runs it. It is also Go-only, so PHP and Node build the same wire
+  body with nothing comparing theirs to anything.
+
+  The comment now says that, and `CONTRIBUTING.md` says it too. Publishing the
+  SDK is what fixes it for real: the gateway's own comment says to drop the
+  build tag and depend on the module normally once it is tagged.
 - `docs/WIRE.md` documents the webhook contract — headers, envelope, the four
   things a verifier must do, and why the delivery id is what you deduplicate
   on. Closes #12.

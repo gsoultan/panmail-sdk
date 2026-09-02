@@ -72,10 +72,21 @@ fixture all of them read beats four copies and a promise.
 
 ## The protos
 
-`proto/` is a verbatim copy of the gateway's, so the two cannot drift. Do not
-edit it by hand — run `scripts/sync-proto.sh /path/to/panmail` and commit what
-it produces. `buf lint proto` checks the copy is still valid; drift from the
-real gateway is caught by the contract test in the panmail repo.
+`proto/` is a verbatim copy of the gateway's. Do not edit it by hand — run
+`scripts/sync-proto.sh /path/to/panmail` and commit what it produces.
+
+`buf lint proto` checks the copy is still valid and self-consistent. It does
+**not** check the copy still matches the gateway's, and nothing in this
+repository does. The panmail repo has a contract test —
+`internal/sdkcontract` — that sends through the real auth stack with this
+client and would catch a field name drifting, but it sits behind a
+`//go:build sdkcontract` tag and needs a `go.work` pointing at a local
+checkout, so it runs when somebody runs it. It is also Go-only.
+
+Publishing the SDK is what fixes that: the gateway's own comment says to drop
+the build tag and depend on the module normally once it is tagged. Until then,
+re-run `sync-proto.sh` when the gateway's protos change and do not rely on
+anything to tell you that you should have.
 
 ## The wire contract
 
