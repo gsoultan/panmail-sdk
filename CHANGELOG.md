@@ -8,6 +8,14 @@ The four language packages share a version number and are released together.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0-rc.1] — 2026-09-02
+
+A release candidate, so that the first time `npm publish` and `mvn deploy`
+run is against a version number nobody wanted. Everything below is the
+first release of the four clients.
+
 ### Security
 
 - **A quadratic-backtracking regex trimmed the base URL's trailing slashes** in

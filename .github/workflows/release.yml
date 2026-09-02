@@ -88,16 +88,31 @@ jobs:
       # them. The ordinary typecheck reads src/, which nobody installs.
       - run: bun run check:types
 
+      # The dist-tag is not optional for a prerelease: npm refuses to publish
+      # one without --tag at all. And the obvious way to satisfy that — passing
+      # `latest` — is worse than the error, because it hands a release
+      # candidate to everyone running `npm install @gsoultan/panmail-sdk`.
+      # Prereleases go to `next`, where they have to be asked for by name.
+      - id: disttag
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          case "$version" in
+            *-*) tag=next ;;
+            *)   tag=latest ;;
+          esac
+          echo "npm will publish $version to the '$tag' tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       # Everything above runs either way. Only this differs.
       - name: Pack (dry run)
         if: ${{ inputs.dry_run }}
         # No provenance and no token: --dry-run resolves neither, and the point
         # here is the tarball's contents and that the manifest is publishable.
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access public --tag "${{ steps.disttag.outputs.tag }}"
       # npm rather than bun: provenance is an npm feature.
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "${{ steps.disttag.outputs.tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

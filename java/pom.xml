@@ -6,7 +6,7 @@
 
     <groupId>io.github.gsoultan</groupId>
     <artifactId>panmail-sdk</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.0-rc.1</version>
     <packaging>jar</packaging>
 
     <name>panmail-sdk</name>
