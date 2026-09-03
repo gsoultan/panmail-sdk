@@ -41,6 +41,16 @@ it is in the git history if it is ever worth paying.
   means silently rejecting real deliveries. Verified by changing a single hex
   digit: Go, PHP and Node all fail.
 
+- **npm now publishes over OIDC instead of a token.** The `v0.1.0-rc.1` release
+  failed with `E403 ... granular access token with bypass 2fa enabled is
+  required`, and npm no longer issues tokens with that bypass — so a
+  token-based release is not merely worse, it is unavailable. The workflow
+  authenticates as a trusted publisher instead, with no long-lived credential
+  anywhere.
+
+  It also pins node 24 rather than 22, because of npm and not node: trusted
+  publishing needs npm >= 11.5.1 and node 22 ships 10.9.8. The package's own
+  floor is still node 18, tested by the `node-runtime` job.
 - **A comment in `ci.yml` claimed more protection than exists.** It said proto
   drift from the gateway "is caught by the contract test in the panmail repo,
   which runs this SDK against the real middleware". The test is real and does

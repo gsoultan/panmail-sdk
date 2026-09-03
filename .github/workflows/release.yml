@@ -69,7 +69,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          # 24 rather than 22 because of npm, not node: trusted publishing
+          # needs npm >= 11.5.1 and node 22 still ships 10.9.8. The package
+          # itself supports node >= 18 — that floor is tested by the
+          # node-runtime job in ci.yml, not here.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
@@ -102,9 +106,20 @@ jobs:
         # here is the tarball's contents and that the manifest is publishable.
         run: npm publish --dry-run --access public --tag "${{ steps.disttag.outputs.tag }}"
       # npm rather than bun: provenance is an npm feature.
+      #
+      # No NODE_AUTH_TOKEN. npm authenticates this over OIDC — a "trusted
+      # publisher" configured on the package pointing at this repository and
+      # this workflow *filename*, release.yml. There is no long-lived token to
+      # leak, rotate or leave behind in a fork.
+      #
+      # It is not a preference. An automation token cannot publish to an
+      # account that requires 2FA for writes, and npm no longer issues granular
+      # tokens with the bypass that used to make CI work. OIDC is the path.
+      #
+      # Bootstrapping needs one manual publish first: a trusted publisher is
+      # configured in a package's settings, and a package that has never been
+      # published has no settings. See CONTRIBUTING.
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
         run: npm publish --provenance --access public --tag "${{ steps.disttag.outputs.tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

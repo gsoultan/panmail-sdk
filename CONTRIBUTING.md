@@ -122,7 +122,46 @@ to remember. npm refuses a prerelease with no `--tag` at all, and answering
 that with `latest` would hand a release candidate to everyone running
 `npm install`.
 
-Publishing needs one repository secret: `NPM_TOKEN`.
+### Publishing to npm
+
+There is no publishing secret. npm authenticates the release workflow over
+OIDC, against a *trusted publisher* configured on the package: this
+repository, and the workflow **filename** `release.yml`. Nothing long-lived
+exists to leak or rotate.
+
+That is not a stylistic choice. An automation token cannot publish to an
+account that requires 2FA for writes, and npm no longer issues granular tokens
+with the bypass that used to make CI work — so a token-based release is not
+available, whatever you would prefer.
+
+**Bootstrapping it takes one manual publish.** A trusted publisher is
+configured in a package's settings, and a package nobody has ever published
+has no settings, so the first version has to go up from a laptop where npm can
+prompt for a one-time password:
+
+```sh
+cd node
+npm login                  # prompts for 2FA
+bun run build
+npm publish --access public --tag next    # --tag next for a prerelease
+```
+
+Then on npmjs.com → the package → Settings → Trusted Publisher:
+
+| Field | Value |
+| --- | --- |
+| Organization or user | `gsoultan` |
+| Repository | `panmail-sdk` |
+| Workflow filename | `release.yml` — the filename, not a path |
+| Allowed actions | `npm publish` |
+
+After that every release publishes from the tag with no human in it. Delete the
+`NPM_TOKEN` secret if one is still set; it is unused and an unused credential
+is only a liability.
+
+The workflow pins node 24 rather than 22 because of npm, not node: trusted
+publishing needs npm >= 11.5.1 and node 22 still ships 10.9.8. The package's
+own floor is node 18, and that is tested by the `node-runtime` job in CI.
 
 ## Coverage
 
