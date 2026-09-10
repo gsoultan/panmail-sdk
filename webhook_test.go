@@ -35,7 +35,7 @@ func webhookBody(t *testing.T) []byte {
 	t.Helper()
 
 	body, err := json.Marshal(map[string]any{
-		"event":     "mail.bounced",
+		"event":     string(panmail.TriggerEventMailBounced),
 		"tenant_id": "3f1c2b7a-0000-4000-8000-000000000001",
 		"timestamp": time.Now().Unix(),
 		"data":      map[string]any{"messageId": "msg_01", "reason": "mailbox full"},
@@ -50,7 +50,7 @@ func webhookHeaders(t *testing.T, secret string, sent time.Time, body []byte) ht
 	t.Helper()
 
 	header := http.Header{}
-	header.Set(panmail.WebhookEventHeader, "mail.bounced")
+	header.Set(panmail.WebhookEventHeader, string(panmail.TriggerEventMailBounced))
 	header.Set(panmail.WebhookDeliveryHeader, "delivery-1")
 	header.Set(panmail.WebhookTimestampHeader, strconv.FormatInt(sent.Unix(), 10))
 	header.Set(panmail.WebhookSignatureHeader, signLikeTheGateway(t, secret, sent.Unix(), body))
@@ -66,8 +66,8 @@ func TestVerifyWebhookAcceptsWhatTheGatewaySent(t *testing.T) {
 		t.Fatalf("VerifyWebhook: %v", err)
 	}
 
-	if event.Event != "mail.bounced" {
-		t.Errorf("Event = %q, want mail.bounced", event.Event)
+	if event.Event != panmail.TriggerEventMailBounced {
+		t.Errorf("Event = %q, want %q", event.Event, panmail.TriggerEventMailBounced)
 	}
 	if event.TenantID != "3f1c2b7a-0000-4000-8000-000000000001" {
 		t.Errorf("TenantID = %q", event.TenantID)
@@ -95,7 +95,7 @@ func TestVerifyWebhookRefusesAnUnsignedDelivery(t *testing.T) {
 	body := webhookBody(t)
 
 	header := http.Header{}
-	header.Set(panmail.WebhookEventHeader, "mail.sent")
+	header.Set(panmail.WebhookEventHeader, string(panmail.TriggerEventMailSent))
 	header.Set(panmail.WebhookDeliveryHeader, "delivery-1")
 
 	_, err := panmail.VerifyWebhook(webhookSecret, header, body)
@@ -291,7 +291,7 @@ func TestVerifyWebhookFallsBackToTheEventHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyWebhook: %v", err)
 	}
-	if event.Event != "mail.bounced" {
+	if event.Event != panmail.TriggerEventMailBounced {
 		t.Errorf("Event = %q, want it taken from the header", event.Event)
 	}
 }
@@ -356,5 +356,69 @@ func TestWebhookSignaturesMatchTheSharedVectors(t *testing.T) {
 				t.Errorf("the shared vector did not verify: %v", err)
 			}
 		})
+	}
+}
+
+// The gateway dispatches with event.String(), so what arrives is the
+// WebhookTriggerEvent enum name verbatim. This is generated from the proto by
+// scripts/sync-status.py, so a value the gateway adds and the clients do not
+// follow fails here rather than arriving as a string nobody matches.
+func TestTriggerEventConstantsMatchTheSharedFixture(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "webhook-events.json"))
+	if err != nil {
+		t.Fatalf("reading the shared fixture: %v", err)
+	}
+	var fixture struct {
+		Constants map[string]string `json:"constants"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parsing the shared fixture: %v", err)
+	}
+
+	exported := map[string]panmail.TriggerEvent{
+		"UNSPECIFIED":              panmail.TriggerEventUnspecified,
+		"MAIL_SENT":                panmail.TriggerEventMailSent,
+		"MAIL_DELIVERED":           panmail.TriggerEventMailDelivered,
+		"MAIL_OPENED":              panmail.TriggerEventMailOpened,
+		"MAIL_CLICKED":             panmail.TriggerEventMailClicked,
+		"MAIL_BOUNCED":             panmail.TriggerEventMailBounced,
+		"MAIL_REJECTED":            panmail.TriggerEventMailRejected,
+		"MAIL_INBOUND":             panmail.TriggerEventMailInbound,
+		"MAIL_HELD":                panmail.TriggerEventMailHeld,
+		"MAIL_RELEASED":            panmail.TriggerEventMailReleased,
+		"MAIL_QUARANTINE_REJECTED": panmail.TriggerEventMailQuarantineRejected,
+		"MAIL_EXPIRED":             panmail.TriggerEventMailExpired,
+	}
+
+	for name, want := range fixture.Constants {
+		got, ok := exported[name]
+		if !ok {
+			t.Errorf("the gateway has %s and this client does not", name)
+			continue
+		}
+		if string(got) != want {
+			t.Errorf("TriggerEvent%s = %q, want %q", name, got, want)
+		}
+	}
+	for name := range exported {
+		if _, ok := fixture.Constants[name]; !ok {
+			t.Errorf("this client exposes %s and the gateway does not", name)
+		}
+	}
+}
+
+// A dotted name is what the gateway's own tests pass to applySignature as an
+// arbitrary string, and it is not what it sends. Worth a test because the
+// mistake is invisible: a handler matching "mail.bounced" compiles, runs, and
+// silently never fires.
+func TestADottedEventNameIsNotTheVocabulary(t *testing.T) {
+	for _, dotted := range []string{"mail.sent", "mail.bounced", "mail.held"} {
+		if _, ok := map[panmail.TriggerEvent]bool{
+			panmail.TriggerEventMailSent:    true,
+			panmail.TriggerEventMailBounced: true,
+			panmail.TriggerEventMailHeld:    true,
+		}[panmail.TriggerEvent(dotted)]; ok {
+			t.Errorf("%q is a TriggerEvent, which contradicts the gateway", dotted)
+		}
 	}
 }

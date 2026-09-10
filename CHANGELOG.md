@@ -18,7 +18,36 @@ one language out of four, while Go and PHP need no credentials at all and npm
 needs one token. The cost was in the release path rather than in the code, and
 it is in the git history if it is ever worth paying.
 
+### Fixed
+
+- **The webhook event vocabulary was documented wrong.** `docs/WIRE.md`, the
+  README and every client's comments said the `X-Panmail-Event` header carries a
+  dotted name like `mail.bounced`. It does not. The gateway dispatches with
+  `event.String()` on a `WebhookTriggerEvent`, so what arrives is
+  `WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED`, verbatim.
+
+  The dotted names were fixtures in the gateway's own `delivery_test.go`, passed
+  as arbitrary strings to a `string` parameter, and they were mistaken for the
+  contract. A handler written from those docs compiles, runs, and never fires —
+  the worst way to be wrong, because nothing reports it.
+
 ### Added
+
+- **`TriggerEvent` constants in all three clients**, covering all twelve
+  `WebhookTriggerEvent` values, checked against `testdata/webhook-events.json`
+  which is generated from the proto. `WebhookEvent.Event` is now typed rather
+  than a bare string.
+
+  Four of the twelve are new in the gateway since this SDK last looked:
+  `MAIL_HELD`, `MAIL_RELEASED`, `MAIL_QUARANTINE_REJECTED` and `MAIL_EXPIRED` —
+  a filter rule quarantining a message and the three ways that hold ends. Note
+  that `MAIL_REJECTED` is a provider refusing a send while
+  `MAIL_QUARANTINE_REJECTED` is a person refusing a held one, and `MAIL_EXPIRED`
+  means a review queue went unwatched rather than that a message was refused.
+
+- `proto/webhook.proto` joins the synced set, and `scripts/sync-proto.sh` copies
+  it. It is the vocabulary a receiver matches on, so it is part of this SDK's
+  contract.
 
 - **Webhook signature verification, in all three clients** — `VerifyWebhook`,
   `Panmail\Webhook::verify`, `verifyWebhook`. Delivery events arrive as a

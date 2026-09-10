@@ -212,7 +212,7 @@ Those events reach your application as an HTTP POST to a URL you register.
 ```
 POST https://your-app.example.com/hooks/panmail
 Content-Type: application/json
-X-Panmail-Event: mail.bounced
+X-Panmail-Event: WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED
 X-Panmail-Delivery: 0193b2f1-...
 X-Panmail-Timestamp: 1700000000
 X-Panmail-Signature: sha256=7efcc11dba053daf...
@@ -220,7 +220,7 @@ X-Panmail-Signature: sha256=7efcc11dba053daf...
 
 | Header | What it is |
 | --- | --- |
-| `X-Panmail-Event` | A dotted name — `mail.sent`, `mail.bounced`. **Not** an `EMAIL_EVENT_TYPE_*` value: those name delivery states, these name events. Lets you route without parsing the body. |
+| `X-Panmail-Event` | A `WebhookTriggerEvent` name, verbatim — `WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED`. **Not** a dotted `mail.bounced`, and **not** an `EMAIL_EVENT_TYPE_*` value. Lets you route without parsing the body. |
 | `X-Panmail-Delivery` | Stable across retries of the same notification. This is what you deduplicate on. |
 | `X-Panmail-Timestamp` | Unix seconds. The second half of what is signed. |
 | `X-Panmail-Signature` | `sha256=` followed by the HMAC, hex encoded. |
@@ -229,12 +229,48 @@ The body is an envelope with the event-specific payload inside it:
 
 ```json
 {
-  "event": "mail.bounced",
+  "event": "WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED",
   "tenant_id": "3f1c2b7a-0000-4000-8000-000000000001",
   "timestamp": 1700000000,
   "data": { "messageId": "0193b2f1-...", "reason": "mailbox full" }
 }
 ```
+
+### The event vocabulary
+
+The `event` field and the `X-Panmail-Event` header both carry a value of
+[`WebhookTriggerEvent`](../proto/panmail/v1/webhook.proto), spelled exactly as
+the enum spells it. The gateway dispatches with `event.String()`, so there is no
+translation step and no dotted form:
+
+```
+WEBHOOK_TRIGGER_EVENT_MAIL_SENT       WEBHOOK_TRIGGER_EVENT_MAIL_HELD
+WEBHOOK_TRIGGER_EVENT_MAIL_DELIVERED  WEBHOOK_TRIGGER_EVENT_MAIL_RELEASED
+WEBHOOK_TRIGGER_EVENT_MAIL_OPENED     WEBHOOK_TRIGGER_EVENT_MAIL_QUARANTINE_REJECTED
+WEBHOOK_TRIGGER_EVENT_MAIL_CLICKED    WEBHOOK_TRIGGER_EVENT_MAIL_EXPIRED
+WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED    WEBHOOK_TRIGGER_EVENT_MAIL_INBOUND
+WEBHOOK_TRIGGER_EVENT_MAIL_REJECTED   WEBHOOK_TRIGGER_EVENT_UNSPECIFIED
+```
+
+> **Do not match on `mail.bounced`.** Dotted names appear in the gateway's own
+> tests, where they are arbitrary strings handed to a `string` parameter, and it
+> is an easy mistake to read one as the vocabulary. A handler matching a dotted
+> name compiles, runs, and never fires — which is the worst way to be wrong,
+> because nothing reports it.
+
+Two of these are easy to confuse and mean opposite things.
+`MAIL_REJECTED` is a *provider* refusing a send, reported by the delivery
+pipeline. `MAIL_QUARANTINE_REJECTED` is a *person* refusing a message a filter
+rule held. A subscriber acting on "rejected" needs to know which it received.
+
+`MAIL_EXPIRED` is the one worth alerting on: a held message hit its retention
+deadline with nobody having decided. It does not say a message was refused, it
+says a review queue went unwatched.
+
+The SDKs expose all twelve — `panmail.TriggerEventMailHeld`,
+`TriggerEvent::MAIL_HELD`, `TriggerEvent.MailHeld` — checked against
+[`testdata/webhook-events.json`](../testdata/webhook-events.json), which is
+generated from the proto.
 
 ### Verifying it
 

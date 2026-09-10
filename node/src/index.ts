@@ -18,3 +18,4 @@ export {
   type WebhookEvent,
   type WebhookHeaderSource,
 } from './webhook.js';
+export { TriggerEvent } from './trigger-event.js';

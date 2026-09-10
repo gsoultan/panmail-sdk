@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'bun:test';
 
+import { TriggerEvent } from './trigger-event.js';
 import {
   DEFAULT_WEBHOOK_TOLERANCE_MS,
   WebhookError,
@@ -26,7 +27,7 @@ const signLikeTheGateway = (secret: string, timestamp: number, body: string) => 
 
 const bodyOf = (over: Record<string, unknown> = {}) =>
   JSON.stringify({
-    event: 'mail.bounced',
+    event: TriggerEvent.MailBounced,
     tenant_id: '3f1c2b7a-0000-4000-8000-000000000001',
     timestamp: Math.floor(Date.now() / 1000),
     data: { messageId: 'msg_01', reason: 'mailbox full' },
@@ -36,7 +37,7 @@ const bodyOf = (over: Record<string, unknown> = {}) =>
 const headersFor = (body: string, secret = SECRET, sentAt = Date.now()) => {
   const seconds = Math.floor(sentAt / 1000);
   return {
-    [WebhookHeaders.Event]: 'mail.bounced',
+    [WebhookHeaders.Event]: TriggerEvent.MailBounced,
     [WebhookHeaders.Delivery]: 'delivery-1',
     [WebhookHeaders.Timestamp]: String(seconds),
     [WebhookHeaders.Signature]: signLikeTheGateway(secret, seconds, body),
@@ -49,7 +50,7 @@ describe('verifyWebhook', () => {
 
     const event = verifyWebhook(SECRET, headersFor(body), body);
 
-    expect(event.event).toBe('mail.bounced');
+    expect(event.event).toBe(TriggerEvent.MailBounced);
     expect(event.tenantId).toBe('3f1c2b7a-0000-4000-8000-000000000001');
     expect(event.deliveryId).toBe('delivery-1');
     expect((event.data as { reason: string }).reason).toBe('mailbox full');
@@ -61,7 +62,7 @@ describe('verifyWebhook', () => {
   test('refuses an unsigned delivery', () => {
     const body = bodyOf();
     expect(() =>
-      verifyWebhook(SECRET, { [WebhookHeaders.Event]: 'mail.sent' }, body),
+      verifyWebhook(SECRET, { [WebhookHeaders.Event]: TriggerEvent.MailSent }, body),
     ).toThrow(/carried no signature/);
   });
 
@@ -124,7 +125,7 @@ describe('verifyWebhook', () => {
 
   test('falls back to the event header when the envelope has no event', () => {
     const body = bodyOf({ event: undefined });
-    expect(verifyWebhook(SECRET, headersFor(body), body).event).toBe('mail.bounced');
+    expect(verifyWebhook(SECRET, headersFor(body), body).event).toBe(TriggerEvent.MailBounced);
   });
 
   test('a non-positive tolerance falls back to the default', () => {
@@ -138,12 +139,12 @@ describe('verifyWebhook', () => {
     const body = bodyOf();
     const plain = headersFor(body);
 
-    expect(verifyWebhook(SECRET, new Headers(plain), body).event).toBe('mail.bounced');
+    expect(verifyWebhook(SECRET, new Headers(plain), body).event).toBe(TriggerEvent.MailBounced);
 
     const lowercased = Object.fromEntries(
       Object.entries(plain).map(([k, v]) => [k.toLowerCase(), v]),
     );
-    expect(verifyWebhook(SECRET, lowercased, body).event).toBe('mail.bounced');
+    expect(verifyWebhook(SECRET, lowercased, body).event).toBe(TriggerEvent.MailBounced);
   });
 
   // The signature covers the bytes that arrived, not the value they decode to.
@@ -161,7 +162,7 @@ describe('verifyWebhook', () => {
   test('accepts the raw bytes a middleware provides', () => {
     const body = bodyOf();
     const event = verifyWebhook(SECRET, headersFor(body), Buffer.from(body, 'utf8'));
-    expect(event.event).toBe('mail.bounced');
+    expect(event.event).toBe(TriggerEvent.MailBounced);
   });
 });
 
@@ -200,4 +201,44 @@ describe('the shared signature vectors', () => {
       }
     });
   }
+});
+
+// The gateway dispatches with event.String(), so what arrives is the
+// WebhookTriggerEvent enum name verbatim. This fixture is generated from the
+// proto, so a value the gateway adds and the clients do not follow fails here
+// rather than arriving as a string nobody matches.
+describe('the shared webhook event fixture', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('../../testdata/webhook-events.json', import.meta.url), 'utf8'),
+  ) as { constants: Record<string, string> };
+
+  const camel = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/_(.)/g, (_, c: string) => c.toUpperCase())
+      .replace(/^./, (c) => c.toUpperCase());
+
+  test('every gateway trigger event is exposed, with the gateway spelling', () => {
+    for (const [name, wire] of Object.entries(fixture.constants)) {
+      expect(TriggerEvent[camel(name) as keyof typeof TriggerEvent]).toBe(wire);
+    }
+  });
+
+  test('nothing is exposed that the gateway does not have', () => {
+    expect(Object.keys(TriggerEvent).length).toBe(Object.keys(fixture.constants).length);
+    const expected = new Set(Object.values(fixture.constants));
+    for (const value of Object.values(TriggerEvent)) {
+      expect(expected).toContain(value);
+    }
+  });
+
+  // A dotted name is what the gateway's own tests pass as an arbitrary string,
+  // and it is not what it sends. The mistake is invisible: a handler matching
+  // "mail.bounced" compiles, runs, and silently never fires.
+  test('a dotted name is not the vocabulary', () => {
+    const values = new Set<string>(Object.values(TriggerEvent));
+    for (const dotted of ['mail.sent', 'mail.bounced', 'mail.held']) {
+      expect(values).not.toContain(dotted);
+    }
+  });
 });

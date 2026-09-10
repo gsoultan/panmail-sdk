@@ -55,8 +55,12 @@ tell a deliberate choice from an accident.
 
 ## What the four must agree on
 
-`testdata/event-types.json` is the gateway's `EmailEventType` enum, generated
-from the proto by `scripts/sync-status.py` and read by every suite. Run that
+`testdata/event-types.json` and `testdata/webhook-events.json` are the gateway's
+`EmailEventType` and `WebhookTriggerEvent` enums, both generated from the protos
+by `scripts/sync-status.py` and read by every suite. They are different
+vocabularies — the first names the state a message is in and comes back from a
+send, the second names why a webhook fired — and conflating them is how a
+receiver ends up matching on a string the gateway never sends. Run that
 after `sync-proto.sh`; the constants themselves stay hand-written, because
 there is no code generator in this build and adding one to keep fifteen strings
 in step would be the wrong trade.

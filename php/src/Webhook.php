@@ -34,9 +34,9 @@ final class Webhook
     public const TIMESTAMP_HEADER = 'X-Panmail-Timestamp';
 
     /**
-     * Lets a receiver route without parsing the body. The value is a dotted
-     * name — "mail.sent", "mail.bounced" — and not one of the Status
-     * constants, which name delivery states rather than events.
+     * Lets a receiver route without parsing the body. The value is a
+     * TriggerEvent — the gateway's WebhookTriggerEvent enum name verbatim,
+     * because it dispatches with event.String().
      */
     public const EVENT_HEADER = 'X-Panmail-Event';
 

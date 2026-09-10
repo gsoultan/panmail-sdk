@@ -82,6 +82,12 @@ The signature covers the bytes that arrived. Read the raw body and verify
 before parsing: `express.json()` has already thrown those bytes away, and a
 re-serialised payload will not verify.
 
+Verifying is necessary but not sufficient: match the event against the
+`TriggerEvent` constants rather than a string you typed. A handler comparing
+against a name the gateway does not send is not a security hole, but it is
+indistinguishable from one — a bounce nobody suppresses looks exactly like a
+bounce nobody was told about.
+
 ## What checks this
 
 The properties above are each held by a test in all three languages, so a change

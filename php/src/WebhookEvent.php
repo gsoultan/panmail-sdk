@@ -8,7 +8,7 @@ namespace Panmail;
 final class WebhookEvent
 {
     /**
-     * @param string $event      the dotted name, e.g. "mail.bounced"
+     * @param string $event      why the webhook fired, e.g. TriggerEvent::MAIL_BOUNCED
      * @param string $tenantId   the tenant the event belongs to; worth checking
      *                           against the one you expected, since a single
      *                           endpoint can serve several

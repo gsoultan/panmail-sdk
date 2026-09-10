@@ -4,6 +4,11 @@
 # The published set is deliberately byte-identical to the gateway's, so drift
 # is impossible to introduce by accident. Run this after the gateway's proto
 # changes, and commit whatever it produces.
+#
+# webhook.proto is in the set because the clients verify webhook deliveries and
+# expose WebhookTriggerEvent as constants. It is the vocabulary a receiver
+# matches on, so it is part of this SDK's contract whether or not anything here
+# generates code from it.
 set -euo pipefail
 
 gateway="${1:-}"
@@ -20,7 +25,7 @@ if [[ ! -d "$source_dir" ]]; then
     exit 1
 fi
 
-for file in common.proto event.proto email_service.proto; do
+for file in common.proto event.proto email_service.proto webhook.proto; do
     cp "$source_dir/$file" "$target_dir/$file"
     echo "synced $file"
 done

@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+import type { TriggerEvent } from './trigger-event.js';
+
 /**
  * Headers the gateway sets on a webhook delivery.
  *
@@ -9,10 +11,10 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * notification captured once could be replayed forever against the same
  * signature.
  *
- * The event name is a dotted string — "mail.sent", "mail.bounced" — and not
- * one of the `Status` constants, which name delivery states rather than
- * events. The delivery id is stable across retries, and the gateway does
- * retry, so a handler that is not idempotent will act twice.
+ * The event is a `TriggerEvent` — the gateway's `WebhookTriggerEvent` enum name
+ * verbatim, because it dispatches with `event.String()`. The delivery id is
+ * stable across retries, and the gateway does retry, so a handler that is not
+ * idempotent will act twice.
  */
 export const WebhookHeaders = {
   Signature: 'X-Panmail-Signature',
@@ -45,8 +47,8 @@ export class WebhookError extends Error {
 
 /** A verified delivery. */
 export interface WebhookEvent {
-  /** The dotted name, e.g. "mail.bounced". */
-  event: string;
+  /** Why the webhook fired, e.g. `TriggerEvent.MailBounced`. */
+  event: TriggerEvent;
 
   /**
    * The tenant the event belongs to. Worth checking against the one you

@@ -182,6 +182,19 @@ $event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('ph
 const event = verifyWebhook(secret, req.headers, req.body);
 ```
 
+Match `event.event` against the `TriggerEvent` constants rather than a string
+you typed — the gateway sends its enum name verbatim,
+`WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED`, not a dotted `mail.bounced`:
+
+```go
+switch event.Event {
+case panmail.TriggerEventMailBounced, panmail.TriggerEventMailQuarantineRejected:
+    // A provider refused it, or a reviewer did. Not the same thing.
+case panmail.TriggerEventMailExpired:
+    // A held message nobody reviewed. This one is about your queue, not the mail.
+}
+```
+
 `event.deliveryId` is stable across retries, and the gateway does retry: store
 it and ignore a repeat, or a bounce will suppress an address more than once.
 The full contract is in [`docs/WIRE.md`](docs/WIRE.md).

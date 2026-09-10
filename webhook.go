@@ -26,8 +26,8 @@ const (
 	WebhookTimestampHeader = "X-Panmail-Timestamp"
 
 	// WebhookEventHeader lets a receiver route without parsing the body. The
-	// value is a dotted name — "mail.sent", "mail.bounced" — and not one of
-	// the Status constants, which name delivery states rather than events.
+	// value is a TriggerEvent — the gateway's WebhookTriggerEvent enum name
+	// verbatim, because it dispatches with event.String().
 	WebhookEventHeader = "X-Panmail-Event"
 
 	// WebhookDeliveryHeader is stable across retries of the same notification,
@@ -65,8 +65,8 @@ func (e *WebhookError) Error() string {
 
 // WebhookEvent is a verified delivery.
 type WebhookEvent struct {
-	// Event is the dotted name from the header, e.g. "mail.bounced".
-	Event string
+	// Event is why the webhook fired, e.g. TriggerEventMailBounced.
+	Event TriggerEvent
 
 	// TenantID is the tenant the event belongs to. Worth checking against the
 	// tenant you expected, since one endpoint can serve several.
@@ -175,7 +175,7 @@ func VerifyWebhook(secret string, header http.Header, body []byte, opts ...Webho
 	}
 
 	return &WebhookEvent{
-		Event:      event,
+		Event:      TriggerEvent(event),
 		TenantID:   envelope.TenantID,
 		Timestamp:  sent,
 		DeliveryID: header.Get(WebhookDeliveryHeader),

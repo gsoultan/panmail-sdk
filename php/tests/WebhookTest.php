@@ -7,6 +7,7 @@ namespace Panmail\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Panmail\Exception\WebhookException;
+use Panmail\TriggerEvent;
 use Panmail\Webhook;
 
 final class WebhookTest extends TestCase
@@ -26,7 +27,7 @@ final class WebhookTest extends TestCase
     private static function body(array $over = []): string
     {
         return json_encode(array_merge([
-            'event' => 'mail.bounced',
+            'event' => TriggerEvent::MAIL_BOUNCED,
             'tenant_id' => '3f1c2b7a-0000-4000-8000-000000000001',
             'timestamp' => time(),
             'data' => ['messageId' => 'msg_01', 'reason' => 'mailbox full'],
@@ -39,7 +40,7 @@ final class WebhookTest extends TestCase
         $sentAt ??= time();
 
         return [
-            Webhook::EVENT_HEADER => 'mail.bounced',
+            Webhook::EVENT_HEADER => TriggerEvent::MAIL_BOUNCED,
             Webhook::DELIVERY_HEADER => 'delivery-1',
             Webhook::TIMESTAMP_HEADER => (string) $sentAt,
             Webhook::SIGNATURE_HEADER => self::signLikeTheGateway($secret, $sentAt, $body),
@@ -52,7 +53,7 @@ final class WebhookTest extends TestCase
 
         $event = Webhook::verify(self::SECRET, self::headers($body), $body);
 
-        self::assertSame('mail.bounced', $event->event);
+        self::assertSame(TriggerEvent::MAIL_BOUNCED, $event->event);
         self::assertSame('3f1c2b7a-0000-4000-8000-000000000001', $event->tenantId);
         self::assertSame('delivery-1', $event->deliveryId);
         self::assertIsArray($event->data);
@@ -69,7 +70,7 @@ final class WebhookTest extends TestCase
         $this->expectException(WebhookException::class);
         $this->expectExceptionMessageMatches('/carried no signature/');
 
-        Webhook::verify(self::SECRET, [Webhook::EVENT_HEADER => 'mail.sent'], self::body());
+        Webhook::verify(self::SECRET, [Webhook::EVENT_HEADER => TriggerEvent::MAIL_SENT], self::body());
     }
 
     public function testItRefusesATamperedBody(): void
@@ -112,7 +113,7 @@ final class WebhookTest extends TestCase
         // The same delivery inside a wider window is fine, which shows the
         // refusal below was the clock and not the signature.
         $event = Webhook::verify(self::SECRET, $headers, $body, 3600);
-        self::assertSame('mail.bounced', $event->event);
+        self::assertSame(TriggerEvent::MAIL_BOUNCED, $event->event);
 
         $this->expectException(WebhookException::class);
         $this->expectExceptionMessageMatches('/tolerance/');
@@ -161,7 +162,7 @@ final class WebhookTest extends TestCase
             'data' => [],
         ], JSON_THROW_ON_ERROR);
 
-        self::assertSame('mail.bounced', Webhook::verify(self::SECRET, self::headers($body), $body)->event);
+        self::assertSame(TriggerEvent::MAIL_BOUNCED, Webhook::verify(self::SECRET, self::headers($body), $body)->event);
     }
 
     public function testANonPositiveToleranceFallsBackToTheDefault(): void
@@ -169,7 +170,7 @@ final class WebhookTest extends TestCase
         $body = self::body();
 
         self::assertSame(
-            'mail.bounced',
+            TriggerEvent::MAIL_BOUNCED,
             Webhook::verify(self::SECRET, self::headers($body), $body, 0)->event
         );
     }
@@ -180,7 +181,7 @@ final class WebhookTest extends TestCase
         $body = self::body();
         $lowercased = array_change_key_case(self::headers($body), CASE_LOWER);
 
-        self::assertSame('mail.bounced', Webhook::verify(self::SECRET, $lowercased, $body)->event);
+        self::assertSame(TriggerEvent::MAIL_BOUNCED, Webhook::verify(self::SECRET, $lowercased, $body)->event);
     }
 
     /** The signature covers the bytes that arrived, not the value they decode to. */
@@ -193,7 +194,7 @@ final class WebhookTest extends TestCase
         $headers = self::headers($arrived);
 
         // As it arrived, indentation and all, it verifies.
-        self::assertSame('mail.bounced', Webhook::verify(self::SECRET, $headers, $arrived)->event);
+        self::assertSame(TriggerEvent::MAIL_BOUNCED, Webhook::verify(self::SECRET, $headers, $arrived)->event);
 
         $this->expectException(WebhookException::class);
 
@@ -248,6 +249,42 @@ final class WebhookTest extends TestCase
             // A body that is valid JSON but not an envelope still proves the
             // signature matched: that refusal happens after the HMAC check.
             self::assertStringContainsString('not a webhook envelope', $refusal->getMessage());
+        }
+    }
+
+    /**
+     * The gateway dispatches with event.String(), so what arrives is the
+     * WebhookTriggerEvent enum name verbatim. This fixture is generated from
+     * the proto, so a value the gateway adds and the clients do not follow
+     * fails here rather than arriving as a string nobody matches.
+     */
+    public function testTriggerEventConstantsMatchTheSharedFixture(): void
+    {
+        $raw = file_get_contents(__DIR__ . '/../../testdata/webhook-events.json');
+        self::assertIsString($raw);
+
+        /** @var array{constants: array<string, string>} $fixture */
+        $fixture = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+
+        $expected = $fixture['constants'];
+        $exported = (new \ReflectionClass(TriggerEvent::class))->getConstants();
+        ksort($expected);
+        ksort($exported);
+
+        self::assertSame($expected, $exported);
+    }
+
+    /**
+     * A dotted name is what the gateway's own tests pass as an arbitrary
+     * string, and it is not what it sends. The mistake is invisible: a handler
+     * matching "mail.bounced" runs and silently never fires.
+     */
+    public function testADottedNameIsNotTheVocabulary(): void
+    {
+        $values = array_values((new \ReflectionClass(TriggerEvent::class))->getConstants());
+
+        foreach (['mail.sent', 'mail.bounced', 'mail.held'] as $dotted) {
+            self::assertNotContains($dotted, $values);
         }
     }
 
