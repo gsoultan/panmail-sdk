@@ -63,9 +63,16 @@ func New(baseURL, apiKey string, opts ...Option) (*Client, error) {
 
 // Send queues a message and returns once the gateway has it on disk.
 //
-// A nil error means the gateway accepted responsibility for delivering the
-// message, not that it has been delivered — that is reported afterwards
-// through delivery events and webhooks, keyed by Result.MessageID.
+// A nil error means the gateway accepted responsibility for the message, not
+// that it has been delivered — that is reported afterwards through delivery
+// events and webhooks, keyed by Result.MessageID.
+//
+// It does not mean the message will be delivered. A filter rule can quarantine
+// one for review, and the gateway answers a held message with the same message
+// id and the same StatusPending as an accepted one, byte for byte. Nothing in
+// the response tells them apart. Subscribe to TriggerEventMailHeld if that
+// matters, and to TriggerEventMailExpired, which is a held message reaching its
+// retention deadline with nobody having reviewed it.
 //
 // An error is either a refusal the caller can act on — see RateLimitedError,
 // BacklogFullError and AuthError — or the transport error underneath. A send

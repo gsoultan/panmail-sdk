@@ -81,6 +81,15 @@ web UI sends and so the better-travelled path.
 { "messageId": "0193b2f1-...", "status": "EMAIL_EVENT_TYPE_PENDING" }
 ```
 
+> **`PENDING` is not a promise of delivery.** A filter rule can quarantine a
+> message for review, and the gateway answers that with the same `messageId` and
+> the same `PENDING` status as an accepted one — byte for byte, with nothing in
+> the response to tell them apart. A successful send means the gateway took
+> responsibility for *deciding* what happens next, which is either delivering
+> the message or putting it in front of a person. Subscribe to
+> `WEBHOOK_TRIGGER_EVENT_MAIL_HELD` if that distinction matters, and to
+> `MAIL_EXPIRED`, which is a hold nobody reviewed in time.
+
 `messageId` identifies the message for the rest of its life — delivery events,
 webhooks and the analytics pages are all keyed by it. Store it next to whatever
 prompted the send.

@@ -10,8 +10,12 @@ type Status string
 
 const (
 	// StatusPending is what a successful Send reports: the gateway has the
-	// message on disk and will deliver it. Delivery itself is reported later,
-	// through events and webhooks.
+	// message on disk. Delivery itself is reported later, through events and
+	// webhooks.
+	//
+	// It does not promise delivery. A filter rule can quarantine a message for
+	// review, and the gateway answers that with this same status and no other
+	// difference — see the Send documentation.
 	StatusPending Status = "EMAIL_EVENT_TYPE_PENDING"
 
 	// The rest are what the gateway reports afterwards, on the event stream and

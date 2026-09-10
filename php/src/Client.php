@@ -122,9 +122,17 @@ final class Client
      * Queues a message and returns once the gateway has it on disk.
      *
      * Returning without throwing means the gateway accepted responsibility for
-     * delivering the message, not that it has been delivered — that is
-     * reported afterwards through delivery events and webhooks, keyed by
+     * the message, not that it has been delivered — that is reported
+     * afterwards through delivery events and webhooks, keyed by
      * $result->messageId.
+     *
+     * It does not mean the message will be delivered. A filter rule can
+     * quarantine one for review, and the gateway answers a held message with
+     * the same message id and the same Status::PENDING as an accepted one, byte
+     * for byte. Nothing in the response tells them apart. Subscribe to
+     * TriggerEvent::MAIL_HELD if that matters, and to
+     * TriggerEvent::MAIL_EXPIRED, which is a held message reaching its
+     * retention deadline unreviewed.
      *
      * @throws InvalidMessageException a message refused before it was sent
      * @throws RateLimitedException    over the tenant's send rate; safe to repeat

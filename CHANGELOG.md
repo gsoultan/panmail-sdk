@@ -20,6 +20,21 @@ it is in the git history if it is ever worth paying.
 
 ### Fixed
 
+- **The SDKs promised delivery that a send does not promise.** Every client said
+  a successful send means the gateway "will deliver" the message, and that a nil
+  error / resolved promise means it "accepted responsibility for delivering" it.
+
+  The gateway now lets a filter rule quarantine a message for review, and it
+  answers a held message with the same `messageId` and the same
+  `EMAIL_EVENT_TYPE_PENDING` as an accepted one —
+  `send_email_usecase.go:409` and `:421` return byte-identical responses.
+  Nothing in the response distinguishes them. So a successful send means the
+  gateway took responsibility for *deciding* what happens next, which is either
+  delivering the message or putting it in front of a person; and a caller who
+  needs the difference has to subscribe to `MAIL_HELD` and `MAIL_EXPIRED`.
+
+  Corrected in all three clients, `docs/WIRE.md` and the README.
+
 - **The webhook event vocabulary was documented wrong.** `docs/WIRE.md`, the
   README and every client's comments said the `X-Panmail-Event` header carries a
   dotted name like `mail.bounced`. It does not. The gateway dispatches with
@@ -45,6 +60,11 @@ it is in the git history if it is ever worth paying.
   `MAIL_QUARANTINE_REJECTED` is a person refusing a held one, and `MAIL_EXPIRED`
   means a review queue went unwatched rather than that a message was refused.
 
+- Go moves to **1.27**, from 1.21. The CI matrix tests the floor and `stable`,
+  so a future release cannot break the build unnoticed. Because the `go`
+  directive is >= 1.21, a consumer on an older toolchain fetches 1.27 rather
+  than failing — unless they pin `GOTOOLCHAIN=local`, which is the one case
+  where this is a hard requirement rather than an automatic upgrade.
 - `proto/webhook.proto` joins the synced set, and `scripts/sync-proto.sh` copies
   it. It is the vocabulary a receiver matches on, so it is part of this SDK's
   contract.

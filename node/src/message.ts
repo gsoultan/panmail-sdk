@@ -10,9 +10,12 @@ import { InvalidMessageError } from './errors.js';
  */
 export const Status = {
   /**
-   * What a successful send reports: the gateway has the message on disk and
-   * will deliver it. Delivery itself is reported later, through events and
-   * webhooks.
+   * What a successful send reports: the gateway has the message on disk.
+   * Delivery itself is reported later, through events and webhooks.
+   *
+   * It does not promise delivery. A filter rule can quarantine a message for
+   * review, and the gateway answers that with this same status and no other
+   * difference — see `send`.
    */
   Pending: 'EMAIL_EVENT_TYPE_PENDING',
 

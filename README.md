@@ -110,6 +110,12 @@ that it was delivered. Delivery is reported afterwards, through delivery events
 and webhooks, keyed by the message id you got back. Store that id next to
 whatever prompted the send.
 
+It is also not a promise of delivery. A filter rule can quarantine a message for
+review, and the gateway answers a held message with the same id and the same
+`PENDING` status as an accepted one — nothing in the response tells them apart.
+Subscribe to `MAIL_HELD` if you need to know, and to `MAIL_EXPIRED`, which is a
+hold nobody reviewed before its retention deadline.
+
 ## The two capacity refusals
 
 Both answer `resource_exhausted` / HTTP 429, on purpose: they are the same

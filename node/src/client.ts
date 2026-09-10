@@ -134,9 +134,16 @@ export class PanmailClient {
   /**
    * Queues a message and resolves once the gateway has it on disk.
    *
-   * Resolving means the gateway accepted responsibility for delivering the
-   * message, not that it has been delivered — that is reported afterwards
-   * through delivery events and webhooks, keyed by result.messageId.
+   * Resolving means the gateway accepted responsibility for the message, not
+   * that it has been delivered — that is reported afterwards through delivery
+   * events and webhooks, keyed by result.messageId.
+   *
+   * It does not mean the message will be delivered. A filter rule can
+   * quarantine one for review, and the gateway answers a held message with the
+   * same message id and the same `Status.Pending` as an accepted one, byte for
+   * byte. Nothing in the response tells them apart. Subscribe to
+   * `TriggerEvent.MailHeld` if that matters, and to `TriggerEvent.MailExpired`,
+   * which is a held message reaching its retention deadline unreviewed.
    *
    * Rejects with InvalidMessageError, RateLimitedError, BacklogFullError,
    * AuthError, ApiError or TransportError.
