@@ -75,8 +75,9 @@ it is in the git history if it is ever worth paying.
 
   **It does not catch behaviour.** A filter rule quarantining a message changed
   what a send means with every proto byte-identical, and nothing here would have
-  noticed. The thing that would is the gateway's own contract test, which was
-  waiting on this SDK being a published module — it now is.
+  noticed. The gateway's `internal/sdkcontract` does catch that class of thing,
+  and has run in its ordinary CI pass since 2026-09-04 — but against the
+  *published* SDK, so `main` is unguarded until it is tagged, and only for Go.
 
 - Go moves to **1.27**, from 1.21. The CI matrix tests the floor and `stable`,
   so a future release cannot break the build unnoticed. Because the `go`
@@ -118,18 +119,17 @@ it is in the git history if it is ever worth paying.
   It also pins node 24 rather than 22, because of npm and not node: trusted
   publishing needs npm >= 11.5.1 and node 22 ships 10.9.8. The package's own
   floor is still node 18, tested by the `node-runtime` job.
-- **A comment in `ci.yml` claimed more protection than exists.** It said proto
-  drift from the gateway "is caught by the contract test in the panmail repo,
-  which runs this SDK against the real middleware". The test is real and does
-  send through the gateway's actual auth stack and usecase — but it is behind a
-  `//go:build sdkcontract` tag and needs a `go.work` pointing at a local
-  checkout, because the SDK is not a dependency of the gateway. It runs when
-  somebody runs it. It is also Go-only, so PHP and Node build the same wire
-  body with nothing comparing theirs to anything.
+- **A comment in `ci.yml` claimed more protection than existed.** It said proto
+  drift "is caught by the contract test in the panmail repo, which runs this SDK
+  against the real middleware". The test was real, but behind a
+  `//go:build sdkcontract` tag needing a `go.work` — it ran when somebody ran
+  it.
 
-  The comment now says that, and `CONTRIBUTING.md` says it too. Publishing the
-  SDK is what fixes it for real: the gateway's own comment says to drop the
-  build tag and depend on the module normally once it is tagged.
+  Since resolved on the gateway's side: its #17, on 2026-09-04, dropped the tag
+  and took the published SDK as an ordinary test dependency, so it runs in every
+  CI pass there. Two caveats remain and the comment now carries them — it guards
+  the *published* SDK rather than `main`, and it is Go only, so PHP and Node
+  build the same wire body with nothing comparing theirs to anything.
 - `docs/WIRE.md` documents the webhook contract — headers, envelope, the four
   things a verifier must do, and why the delivery id is what you deduplicate
   on. Closes #12.

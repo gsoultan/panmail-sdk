@@ -86,12 +86,19 @@ gateway's protos over https and diffs them. It runs weekly, on any change to
 
 **What it does not catch is behaviour.** A filter rule quarantining a message
 changed what a send means with every proto byte-identical; nothing here would
-have noticed. The thing that would is the contract test in the panmail repo,
-`internal/sdkcontract`, which sends through the real auth stack and usecase.
-That test is behind a `//go:build sdkcontract` tag because the SDK was not a
-published module — and it is now, so the gateway can drop the tag and depend on
-it normally. Its own comment says so. That is a change in the panmail repo, not
-this one, and it is the remaining gap worth closing.
+have noticed.
+
+The panmail repo's `internal/sdkcontract` runs in its ordinary CI test pass, as
+of its #17 on 2026-09-04 — no build tag, the SDK in its `go.mod` like any other
+test dependency. Four tests: a send through the real auth stack, every field the
+SDK sends being decoded by the gateway, and a send refused both without the
+`email:send` scope and with an unknown key. `TestTheGatewayDecodesEveryFieldTheSDKSends`
+is the one that catches a field name drifting.
+
+Two things follow from that. It guards the **published** SDK, not `main` — so a
+change here is unguarded until it is tagged and the gateway's `go.mod` moves.
+And it is **Go only**: PHP and Node build the same wire body by hand, and nothing
+compares theirs to the gateway. That is the gap that is actually left.
 
 ## The wire contract
 

@@ -172,20 +172,16 @@ jobs:
         with:
           setup_only: true
       # The published protos are copies, and this only checks they are still
-      # valid and self-consistent. It does not check they still match the
-      # gateway's.
+      # valid and self-consistent. Whether they still *match* the gateway's is
+      # checked by the proto-drift workflow, not here.
       #
-      # There is a contract test in the panmail repo — internal/sdkcontract —
-      # that sends through the real auth stack and usecase with this client,
-      # and it does catch a field name drifting. But it is behind a
-      # `//go:build sdkcontract` tag and needs a go.work pointing at a local
-      # checkout, because the SDK is not a dependency of the gateway. So it
-      # runs when somebody runs it, which is not the same as running.
+      # Behaviour is a different question, and the answer is in the panmail
+      # repo: internal/sdkcontract sends through the real auth stack with this
+      # client and runs in its ordinary CI pass. It guards the *published* SDK
+      # though — whatever version is in the gateway's go.mod — so main is only
+      # covered once it is tagged.
       #
-      # It also covers Go only. PHP and Node build the same wire body, and
-      # nothing automated compares theirs to anything.
-      #
-      # Tagging the SDK is what unblocks this: the gateway's own comment says
-      # to drop the build tag and depend on the module normally once it is
-      # published. Until then, treat proto drift as unguarded. See docs/WIRE.md.
+      # It also covers Go only. PHP and Node build the same wire body by hand,
+      # and nothing automated compares theirs to anything. That is the gap that
+      # is left. See docs/WIRE.md.
       - run: buf lint proto
