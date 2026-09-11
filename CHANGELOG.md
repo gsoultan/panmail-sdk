@@ -8,15 +8,13 @@ The three language packages share a version number and are released together.
 
 ## [Unreleased]
 
-The first release, in Go, PHP and Node. Nothing has been tagged yet, so
-everything here is still unreleased.
+Nothing yet.
 
-A Java client existed during development and was removed before any release.
-Publishing it meant Maven Central, which meant verifying the
-`io.github.gsoultan` namespace with Sonatype — approval measured in days, for
-one language out of four, while Go and PHP need no credentials at all and npm
-needs one token. The cost was in the release path rather than in the code, and
-it is in the git history if it is ever worth paying.
+## [0.1.0-rc.2] — 2026-09-11
+
+Re-checked against the gateway, which had moved. Three things this SDK asserted
+turned out to be wrong rather than merely out of date, and all three were
+assumptions about panmail that only broke when somebody opened it.
 
 ### Fixed
 
@@ -46,8 +44,25 @@ it is in the git history if it is ever worth paying.
   contract. A handler written from those docs compiles, runs, and never fires —
   the worst way to be wrong, because nothing reports it.
 
+- **A comment in `ci.yml` claimed more protection than existed.** It said proto
+  drift "is caught by the contract test in the panmail repo, which runs this SDK
+  against the real middleware". The test was real, but behind a
+  `//go:build sdkcontract` tag needing a `go.work` — it ran when somebody ran
+  it.
+
+  Since resolved on the gateway's side: its #17, on 2026-09-04, dropped the tag
+  and took the published SDK as an ordinary test dependency, so it runs in every
+  CI pass there. Two caveats remain and the comment now carries them — it guards
+  the *published* SDK rather than `main`, and it is Go only, so PHP and Node
+  build the same wire body with nothing comparing theirs to anything.
+
 ### Added
 
+- Go moves to **1.27**, from 1.21. The CI matrix tests the floor and `stable`,
+  so a future release cannot break the build unnoticed. Because the `go`
+  directive is >= 1.21, a consumer on an older toolchain fetches 1.27 rather
+  than failing — unless they pin `GOTOOLCHAIN=local`, which is the one case
+  where this is a hard requirement rather than an automatic upgrade.
 - **`TriggerEvent` constants in all three clients**, covering all twelve
   `WebhookTriggerEvent` values, checked against `testdata/webhook-events.json`
   which is generated from the proto. `WebhookEvent.Event` is now typed rather
@@ -79,14 +94,37 @@ it is in the git history if it is ever worth paying.
   and has run in its ordinary CI pass since 2026-09-04 — but against the
   *published* SDK, so `main` is unguarded until it is tagged, and only for Go.
 
-- Go moves to **1.27**, from 1.21. The CI matrix tests the floor and `stable`,
-  so a future release cannot break the build unnoticed. Because the `go`
-  directive is >= 1.21, a consumer on an older toolchain fetches 1.27 rather
-  than failing — unless they pin `GOTOOLCHAIN=local`, which is the one case
-  where this is a hard requirement rather than an automatic upgrade.
 - `proto/webhook.proto` joins the synced set, and `scripts/sync-proto.sh` copies
   it. It is the vocabulary a receiver matches on, so it is part of this SDK's
   contract.
+
+- **npm now publishes over OIDC instead of a token.** The `v0.1.0-rc.1` release
+  failed with `E403 ... granular access token with bypass 2fa enabled is
+  required`, and npm no longer issues tokens with that bypass — so a
+  token-based release is not merely worse, it is unavailable. The workflow
+  authenticates as a trusted publisher instead, with no long-lived credential
+  anywhere.
+
+  It also pins node 24 rather than 22, because of npm and not node: trusted
+  publishing needs npm >= 11.5.1 and node 22 ships 10.9.8. The package's own
+  floor is still node 18, tested by the `node-runtime` job.
+
+## [0.1.0-rc.1] — 2026-09-02
+
+The first release, in Go, PHP and Node.
+
+A Java client existed during development and was removed before any release.
+Publishing it meant Maven Central, which meant verifying the
+`io.github.gsoultan` namespace with Sonatype — approval measured in days, for
+one language out of four, while Go and PHP need no credentials at all and npm
+needs one token. The cost was in the release path rather than in the code, and
+it is in the git history if it is ever worth paying.
+
+Tagged, but only Go and PHP reached a registry: npm refused the publish because
+an automation token cannot write to a 2FA-enforced account. See 0.1.0-rc.2.
+### Fixed
+
+### Added
 
 - **Webhook signature verification, in all three clients** — `VerifyWebhook`,
   `Panmail\Webhook::verify`, `verifyWebhook`. Delivery events arrive as a
@@ -109,27 +147,6 @@ it is in the git history if it is ever worth paying.
   means silently rejecting real deliveries. Verified by changing a single hex
   digit: Go, PHP and Node all fail.
 
-- **npm now publishes over OIDC instead of a token.** The `v0.1.0-rc.1` release
-  failed with `E403 ... granular access token with bypass 2fa enabled is
-  required`, and npm no longer issues tokens with that bypass — so a
-  token-based release is not merely worse, it is unavailable. The workflow
-  authenticates as a trusted publisher instead, with no long-lived credential
-  anywhere.
-
-  It also pins node 24 rather than 22, because of npm and not node: trusted
-  publishing needs npm >= 11.5.1 and node 22 ships 10.9.8. The package's own
-  floor is still node 18, tested by the `node-runtime` job.
-- **A comment in `ci.yml` claimed more protection than existed.** It said proto
-  drift "is caught by the contract test in the panmail repo, which runs this SDK
-  against the real middleware". The test was real, but behind a
-  `//go:build sdkcontract` tag needing a `go.work` — it ran when somebody ran
-  it.
-
-  Since resolved on the gateway's side: its #17, on 2026-09-04, dropped the tag
-  and took the published SDK as an ordinary test dependency, so it runs in every
-  CI pass there. Two caveats remain and the comment now carries them — it guards
-  the *published* SDK rather than `main`, and it is Go only, so PHP and Node
-  build the same wire body with nothing comparing theirs to anything.
 - `docs/WIRE.md` documents the webhook contract — headers, envelope, the four
   things a verifier must do, and why the delivery id is what you deduplicate
   on. Closes #12.
