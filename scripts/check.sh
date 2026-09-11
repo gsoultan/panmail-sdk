@@ -59,6 +59,22 @@ else
     skipped+=('Go (no go)')
 fi
 
+# Not language-specific, and cheap. Needs the network, so a missing one is a
+# skip rather than a failure — an offline contributor is not a broken contract.
+printf '  %-34s' 'protos match the gateway'
+if drift_output=$(./scripts/check-proto-drift.sh 2>&1); then
+    printf 'ok\n'
+    pass=$((pass + 1))
+elif printf '%s' "$drift_output" | grep -q 'could not fetch'; then
+    printf 'skipped\n'
+    skipped+=('proto drift (no network, or the gateway is unreachable)')
+else
+    printf 'DRIFTED\n'
+    printf '%s\n' "$drift_output" | sed 's/^/      /'
+    fail=$((fail + 1))
+    failed+=('proto drift')
+fi
+
 echo 'PHP'
 if have php && [ -x php/vendor/bin/phpunit ]; then
     run 'phpunit' bash -c 'cd php && vendor/bin/phpunit'

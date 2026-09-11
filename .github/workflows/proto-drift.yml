@@ -1,0 +1,58 @@
+name: Proto drift
+
+# proto/ is a verbatim copy of the gateway's, and `buf lint` in CI only proves
+# the copy is still valid — not that it still matches. Twice now the gateway
+# moved and this repository found out because somebody went looking. Going
+# looking is not a control.
+#
+# Deliberately on a schedule rather than in the pull request path. Drift is not
+# caused by the change under review, and failing an unrelated pull request
+# because the gateway moved teaches people that a red check is somebody else's
+# problem — which is how a red check stops meaning anything.
+on:
+  schedule:
+    # Monday morning, before anyone has built on a stale contract for a week.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+  # Also on a change to the copies themselves, where it *is* the change under
+  # review and failing is exactly right.
+  push:
+    branches: [main]
+    paths:
+      - 'proto/**'
+      - 'testdata/event-types.json'
+      - 'testdata/webhook-events.json'
+      - 'scripts/sync-proto.sh'
+      - 'scripts/sync-status.py'
+      - 'scripts/check-proto-drift.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Fetches the gateway's protos over https. panmail is public, so this
+      # needs no credentials — if it ever goes private this job fails loudly
+      # rather than silently passing, which is the right way round.
+      - name: Compare the published protos against the gateway
+        run: scripts/check-proto-drift.sh
+
+      # The enum fixtures are generated from the protos, so a stale generator
+      # or a hand-edited fixture is its own kind of drift.
+      - name: The enum fixtures still regenerate identically
+        run: |
+          scripts/sync-status.py
+          if ! git diff --quiet testdata/; then
+            echo "::error::testdata/ is not what scripts/sync-status.py produces"
+            git diff --stat testdata/
+            exit 1
+          fi
+          echo "the enum fixtures match their generator"

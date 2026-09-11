@@ -60,6 +60,24 @@ it is in the git history if it is ever worth paying.
   `MAIL_QUARANTINE_REJECTED` is a person refusing a held one, and `MAIL_EXPIRED`
   means a review queue went unwatched rather than that a message was refused.
 
+- **Proto drift is now checked rather than hoped for.**
+  `scripts/check-proto-drift.sh` fetches the gateway's protos over https and
+  diffs them against the copies here; a weekly workflow runs it, as does
+  `check.sh`, and so does any push touching `proto/` or the generators. The
+  enum fixtures are re-generated and compared too, so a hand-edited fixture is
+  caught as its own kind of drift.
+
+  It exists because going looking is not a control: twice the gateway moved and
+  this repository found out only because somebody checked. It is on a schedule
+  rather than in the pull request path deliberately — drift is not caused by the
+  change under review, and failing unrelated pull requests is how a red check
+  stops meaning anything.
+
+  **It does not catch behaviour.** A filter rule quarantining a message changed
+  what a send means with every proto byte-identical, and nothing here would have
+  noticed. The thing that would is the gateway's own contract test, which was
+  waiting on this SDK being a published module — it now is.
+
 - Go moves to **1.27**, from 1.21. The CI matrix tests the floor and `stable`,
   so a future release cannot break the build unnoticed. Because the `go`
   directive is >= 1.21, a consumer on an older toolchain fetches 1.27 rather
