@@ -115,7 +115,33 @@ Non-200 responses carry a Connect error envelope:
 | `unauthenticated` | 401 | Key missing or rejected. |
 | `permission_denied` | 403 | Key lacks the `email:send` scope. |
 | `resource_exhausted` | 429 | **Two different things — see below.** |
+| `unknown` | 500 | **Not always a failure — see below.** |
 | `internal` | 500 | The gateway failed. |
+
+#### A 500 is not always transient
+
+The gateway maps only its two capacity refusals to a Connect code. Everything
+else a send can refuse — a suppressed recipient, a provider that does not exist,
+a template that will not render — returns as a bare error, and Connect turns a
+bare error into `unknown` with HTTP 500.
+
+So `unknown`/500 covers both "the gateway broke, try later" and refusals that
+will never succeed no matter how long you wait. The one most worth knowing:
+
+```json
+{ "code": "unknown",
+  "message": "recipient bounced@example.net is suppressed: hard bounce" }
+```
+
+A suppressed address refuses the **whole** message — the first suppressed
+recipient, not just that recipient's copy. It is permanent until the suppression
+is removed, and retrying is useless. Treat a 500 from a send as "find out which
+kind before retrying", not as a transient fault, and do not put one on a retry
+timer without reading the message.
+
+This is a gap in the gateway rather than a design: a suppressed recipient is
+exactly the sort of actionable refusal that deserves its own code, and it does
+not have one yet.
 
 #### The one subtlety worth knowing
 

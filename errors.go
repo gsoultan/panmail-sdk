@@ -10,6 +10,14 @@ import (
 // APIError is a refusal the client has no more specific type for. Code is the
 // Connect error code the gateway sent — "invalid_argument", "internal" and so
 // on — and Status is the HTTP status it arrived with.
+//
+// A Code of "unknown" with Status 500 is worth reading the Message for rather
+// than retrying. The gateway maps only its two capacity refusals to a Connect
+// code; every other refusal a send can make arrives as a bare error, which
+// Connect renders as "unknown". So this one value covers both "the gateway
+// broke, try later" and refusals that will never succeed — a suppressed
+// recipient being the common one, which refuses the whole message and stays
+// refused until the suppression is lifted.
 type APIError struct {
 	Code    string
 	Message string

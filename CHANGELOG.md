@@ -8,7 +8,25 @@ The three language packages share a version number and are released together.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`unknown`/500 from a send is documented as ambiguous**, because it is. The
+  gateway maps only its two capacity refusals to a Connect code; every other
+  refusal a send can make — a suppressed recipient, a provider that does not
+  exist, a template that will not render — returns as a bare error, and Connect
+  turns a bare error into `unknown` with HTTP 500.
+
+  So the code that reads like "the gateway broke, try later" also carries
+  refusals that will never succeed. The common one is a suppressed recipient,
+  which refuses the *whole* message rather than that recipient's copy and stays
+  refused until the suppression is lifted. A caller's instinct on a 500 is to
+  retry, and for that case retrying is useless forever.
+
+  Verified against a response shaped exactly as connect-go emits for a bare
+  handler error: it arrives as `APIError{Code: "unknown", Status: 500}`,
+  indistinguishable from a real failure. Recorded in `docs/WIRE.md` and on the
+  error type in all three clients. The real fix belongs in the gateway, which
+  has no distinguishable code for this yet.
 
 ## [0.1.0-rc.2] — 2026-09-11
 

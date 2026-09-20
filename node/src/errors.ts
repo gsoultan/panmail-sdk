@@ -38,6 +38,14 @@ export class TransportError extends PanmailError {
  *
  * `code` is the Connect error code the gateway sent — "invalid_argument",
  * "internal" and so on — and `status` is the HTTP status it arrived with.
+ *
+ * A `code` of "unknown" with `status` 500 is worth reading the message for
+ * rather than retrying. The gateway maps only its two capacity refusals to a
+ * Connect code; every other refusal a send can make arrives as a bare error,
+ * which Connect renders as "unknown". So this one value covers both "the
+ * gateway broke, try later" and refusals that will never succeed — a suppressed
+ * recipient being the common one, which refuses the whole message and stays
+ * refused until the suppression is lifted.
  */
 export class ApiError extends PanmailError {
   constructor(
