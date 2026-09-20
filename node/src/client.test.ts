@@ -8,6 +8,7 @@ import {
   BacklogFullError,
   InvalidMessageError,
   RateLimitedError,
+  SuppressedRecipientError,
   TransportError,
 } from './errors.js';
 import { Status, type Message } from './message.js';
@@ -565,4 +566,62 @@ test('one client serves many sends at once', async () => {
     expect(headers['X-API-Key']).toBe('test-key');
     expect(headers['X-Trace']).toBe('abc');
   }
+});
+
+// A suppressed recipient is a decision, not a failure: the same request is
+// refused the same way until the address comes off the send or the suppression
+// is lifted. Before the gateway had a code for it, it arrived as "unknown" with
+// a 500 and was indistinguishable from the gateway having broken — the one
+// reading that makes a caller retry it forever.
+describe('a suppressed recipient', () => {
+  const suppressed = () =>
+    gateway(
+      refusal(400, 'failed_precondition', 'recipient bounced@example.net is suppressed: hard bounce'),
+    );
+
+  test('is its own refusal, and carries the address and reason', async () => {
+    const g = suppressed();
+
+    await expect(client(g.fetch).send(hello())).rejects.toBeInstanceOf(SuppressedRecipientError);
+
+    try {
+      await client(suppressed().fetch).send(hello());
+    } catch (error) {
+      const e = error as SuppressedRecipientError;
+      // Prose, deliberately: parsing it would break on a reword.
+      expect(e.message).toContain('bounced@example.net');
+      expect(e.message).toContain('hard bounce');
+      expect(e.code).toBe('failed_precondition');
+      expect(e.status).toBe(400);
+    }
+  });
+
+  test('is not the other refusals', async () => {
+    let thrown: unknown;
+    try {
+      await client(suppressed().fetch).send(hello());
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).not.toBeInstanceOf(RateLimitedError);
+    expect(thrown).not.toBeInstanceOf(BacklogFullError);
+    expect(thrown).not.toBeInstanceOf(AuthError);
+    // But it is still an ApiError, like every other refusal.
+    expect(thrown).toBeInstanceOf(ApiError);
+  });
+
+  // The gateway's other permanent refusals keep their code and stay ApiErrors:
+  // there is nothing to branch on beyond "fix the request".
+  test('is not confused with an unusable request', async () => {
+    const g = gateway(refusal(400, 'invalid_argument', 'provider 0f8b does not exist'));
+
+    let thrown: unknown;
+    try {
+      await client(g.fetch).send(hello());
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).not.toBeInstanceOf(SuppressedRecipientError);
+    expect((thrown as ApiError).code).toBe('invalid_argument');
+  });
 });

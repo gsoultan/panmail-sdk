@@ -126,6 +126,7 @@ them is whether the gateway attached a delay.
 | --- | --- | --- | --- |
 | Over the send rate | `*RateLimitedError` | `RateLimitedException` | `RateLimitedError` |
 | Backlog full | `*BacklogFullError` | `BacklogFullException` | `BacklogFullError` |
+| Recipient suppressed | `*SuppressedRecipientError` | `SuppressedRecipientException` | `SuppressedRecipientError` |
 | Key rejected | `*AuthError` | `AuthException` | `AuthError` |
 | Anything else | `*APIError` | `ApiException` | `ApiError` |
 

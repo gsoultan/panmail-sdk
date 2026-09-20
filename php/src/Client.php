@@ -9,6 +9,7 @@ use Panmail\Exception\AuthException;
 use Panmail\Exception\BacklogFullException;
 use Panmail\Exception\InvalidMessageException;
 use Panmail\Exception\RateLimitedException;
+use Panmail\Exception\SuppressedRecipientException;
 use Panmail\Exception\TransportException;
 use Panmail\Transport\CurlTransport;
 use Panmail\Transport\Response;
@@ -240,7 +241,10 @@ final class Client
         }
 
         // Fall back to the HTTP status when the body carried no code, which is
-        // what a proxy returning its own error page looks like.
+        // what a proxy returning its own error page looks like. Deliberately no
+        // entry for 400: the gateway sends both failed_precondition and
+        // invalid_argument as 400, so a status with no code cannot tell them
+        // apart and guessing would misclassify one of them.
         if ($code === '') {
             $code = match ($status) {
                 429 => 'resource_exhausted',
@@ -252,6 +256,15 @@ final class Client
 
         return match ($code) {
             'resource_exhausted' => $this->capacityRefusal($message, $code, $status, $response),
+            // The gateway's answer to a suppressed recipient, and only to that
+            // on the send path. Before it had a code for this, a suppressed
+            // recipient arrived as "unknown" with a 500 and was
+            // indistinguishable from the gateway having broken.
+            'failed_precondition' => new SuppressedRecipientException(
+                "panmail: a recipient is suppressed, so the whole message was refused: $message",
+                $code,
+                $status
+            ),
             'unauthenticated', 'permission_denied' => new AuthException(
                 "panmail: the api key was not accepted: $message",
                 $code,

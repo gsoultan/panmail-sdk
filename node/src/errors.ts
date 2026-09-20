@@ -39,13 +39,11 @@ export class TransportError extends PanmailError {
  * `code` is the Connect error code the gateway sent — "invalid_argument",
  * "internal" and so on — and `status` is the HTTP status it arrived with.
  *
- * A `code` of "unknown" with `status` 500 is worth reading the message for
- * rather than retrying. The gateway maps only its two capacity refusals to a
- * Connect code; every other refusal a send can make arrives as a bare error,
- * which Connect renders as "unknown". So this one value covers both "the
- * gateway broke, try later" and refusals that will never succeed — a suppressed
- * recipient being the common one, which refuses the whole message and stays
- * refused until the suppression is lifted.
+ * `code` tells you whether retrying can help. "unknown" is a failure — storage,
+ * a provider connection — and is the one worth a backoff. Everything else is a
+ * refusal: the same request answered the same way until something changes, so
+ * "invalid_argument" wants the request fixed rather than repeated. The refusals
+ * worth branching on have their own types; this is what is left.
  */
 export class ApiError extends PanmailError {
   constructor(
@@ -86,6 +84,19 @@ export class RateLimitedError extends ApiError {
  */
 export class BacklogFullError extends ApiError {}
 
+/**
+ * A send addressed to someone on the tenant's suppression list.
+ *
+ * It refuses the whole message, not just that recipient's copy, and it will be
+ * refused identically until the address is removed from the send or the
+ * suppression is lifted. Retrying spends attempts on an answer that cannot move.
+ *
+ * The address and the reason are in the message rather than in fields. The
+ * gateway sends them as prose, and parsing prose would break this client the
+ * next time somebody rewords it — a worse dependency than reading the message.
+ */
+export class SuppressedRecipientError extends ApiError {}
+
 /** The API key was missing, rejected, or lacks the email:send scope. */
 export class AuthError extends ApiError {}
 
@@ -93,6 +104,14 @@ export class AuthError extends ApiError {}
 const RESOURCE_EXHAUSTED = 'resource_exhausted';
 const UNAUTHENTICATED = 'unauthenticated';
 const PERMISSION_DENIED = 'permission_denied';
+
+/**
+ * The gateway's answer to a suppressed recipient, and only to that on the send
+ * path. Documented as such rather than inferred: before the gateway had a code
+ * for it, a suppressed recipient arrived as "unknown" with a 500 and was
+ * indistinguishable from the gateway having broken.
+ */
+const FAILED_PRECONDITION = 'failed_precondition';
 
 /**
  * Turns a refusal into something a caller can act on.
@@ -140,6 +159,14 @@ export function classify(payload: string, status: number, headers: Headers): Api
     return new RateLimitedError(
       `panmail: send rate exceeded, retry after ${seconds}s: ${message}`,
       seconds,
+      code,
+      status,
+    );
+  }
+
+  if (code === FAILED_PRECONDITION) {
+    return new SuppressedRecipientError(
+      `panmail: a recipient is suppressed, so the whole message was refused: ${message}`,
       code,
       status,
     );

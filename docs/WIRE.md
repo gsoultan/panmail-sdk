@@ -114,34 +114,42 @@ Non-200 responses carry a Connect error envelope:
 | `invalid_argument` | 400 | The message was malformed. |
 | `unauthenticated` | 401 | Key missing or rejected. |
 | `permission_denied` | 403 | Key lacks the `email:send` scope. |
+| `failed_precondition` | 400 | A recipient is on the tenant's suppression list. |
 | `resource_exhausted` | 429 | **Two different things — see below.** |
-| `unknown` | 500 | **Not always a failure — see below.** |
-| `internal` | 500 | The gateway failed. |
+| `unknown` | 500 | Something failed rather than refused. Retry with backoff. |
 
-#### A 500 is not always transient
+#### A refusal is not a failure
 
-The gateway maps only its two capacity refusals to a Connect code. Everything
-else a send can refuse — a suppressed recipient, a provider that does not exist,
-a template that will not render — returns as a bare error, and Connect turns a
-bare error into `unknown` with HTTP 500.
+The split worth internalising is not which code you got but which kind of answer
+it is. A **refusal** is a decision: the same request is answered the same way
+until somebody changes something, so retrying spends attempts on an answer that
+cannot move. Only `unknown` means the gateway might succeed if asked again.
 
-So `unknown`/500 covers both "the gateway broke, try later" and refusals that
-will never succeed no matter how long you wait. The one most worth knowing:
+| Answer | Kind | What to do |
+| --- | --- | --- |
+| `invalid_argument` | refusal | Fix the request — the provider or template does not exist, or the template will not render against the data sent. Retrying never helps. |
+| `unauthenticated`, `permission_denied` | refusal | Fix the key or its scopes. |
+| `failed_precondition` | refusal | A recipient is suppressed. The **whole** message is refused, not just that recipient's copy. Remove the address from the send, or lift the suppression. |
+| `resource_exhausted` | refusal | You are asking for more than you may have. The only one with a schedule attached, and only sometimes — see below. |
+| `unknown` | failure | Storage, a provider connection. Retry with backoff. |
+
+Suppression is worth calling out because it is the one that reads like a
+per-recipient problem and is not:
 
 ```json
-{ "code": "unknown",
+{ "code": "failed_precondition",
   "message": "recipient bounced@example.net is suppressed: hard bounce" }
 ```
 
-A suppressed address refuses the **whole** message — the first suppressed
-recipient, not just that recipient's copy. It is permanent until the suppression
-is removed, and retrying is useless. Treat a 500 from a send as "find out which
-kind before retrying", not as a transient fault, and do not put one on a retry
-timer without reading the message.
+Nothing was sent to anybody. The SDKs give this its own type —
+`SuppressedRecipientError`, `SuppressedRecipientException` — so a caller can act
+on it without reading the message, though the address and the reason are only in
+the message.
 
-This is a gap in the gateway rather than a design: a suppressed recipient is
-exactly the sort of actionable refusal that deserves its own code, and it does
-not have one yet.
+> This used to be worse, and recently. Before the gateway had codes for its
+> refusals, everything except the two capacity ones arrived as `unknown` with a
+> 500, so a suppressed address was indistinguishable from the gateway having
+> broken — and a caller doing the obvious thing with a 500 retried it forever.
 
 #### The one subtlety worth knowing
 

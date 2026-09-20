@@ -11,13 +11,11 @@ namespace Panmail\Exception;
  * "invalid_argument", "internal" and so on — and $status is the HTTP status it
  * arrived with.
  *
- * A $connectCode of "unknown" with $status 500 is worth reading the message for
- * rather than retrying. The gateway maps only its two capacity refusals to a
- * Connect code; every other refusal a send can make arrives as a bare error,
- * which Connect renders as "unknown". So this one value covers both "the
- * gateway broke, try later" and refusals that will never succeed — a suppressed
- * recipient being the common one, which refuses the whole message and stays
- * refused until the suppression is lifted.
+ * $connectCode tells you whether retrying can help. "unknown" is a failure —
+ * storage, a provider connection — and is the one worth a backoff. Everything
+ * else is a refusal: the same request answered the same way until something
+ * changes, so "invalid_argument" wants the request fixed rather than repeated.
+ * The refusals worth branching on have their own types; this is what is left.
  *
  * It is not called `$code`, as it is in the Go and Node clients, because
  * \Exception already declares `$code` as a non-readonly int. Redeclaring it as

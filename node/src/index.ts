@@ -7,6 +7,7 @@ export {
   InvalidMessageError,
   PanmailError,
   RateLimitedError,
+  SuppressedRecipientError,
   TransportError,
 } from './errors.js';
 export {

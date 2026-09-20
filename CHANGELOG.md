@@ -8,25 +8,30 @@ The three language packages share a version number and are released together.
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **`unknown`/500 from a send is documented as ambiguous**, because it is. The
-  gateway maps only its two capacity refusals to a Connect code; every other
-  refusal a send can make — a suppressed recipient, a provider that does not
-  exist, a template that will not render — returns as a bare error, and Connect
-  turns a bare error into `unknown` with HTTP 500.
+- **A typed refusal for a suppressed recipient** — `SuppressedRecipientError`,
+  `SuppressedRecipientException`, `SuppressedRecipientError` — classified from
+  the gateway's new `failed_precondition`.
 
-  So the code that reads like "the gateway broke, try later" also carries
-  refusals that will never succeed. The common one is a suppressed recipient,
-  which refuses the *whole* message rather than that recipient's copy and stays
-  refused until the suppression is lifted. A caller's instinct on a 500 is to
-  retry, and for that case retrying is useless forever.
+  A suppressed address refuses the **whole** message, not just that recipient's
+  copy, and stays refused until the address comes off the send or the
+  suppression is lifted. It reads like a per-recipient problem and is not, which
+  is why it is worth its own type.
 
-  Verified against a response shaped exactly as connect-go emits for a bare
-  handler error: it arrives as `APIError{Code: "unknown", Status: 500}`,
-  indistinguishable from a real failure. Recorded in `docs/WIRE.md` and on the
-  error type in all three clients. The real fix belongs in the gateway, which
-  has no distinguishable code for this yet.
+  The address and the reason stay in the message rather than becoming fields:
+  the gateway sends them as prose, and parsing prose would break these clients
+  the next time somebody rewords it.
+
+### Changed
+
+- **`docs/WIRE.md` now splits answers by refusal versus failure** rather than
+  listing codes. That is the distinction that decides whether to retry, and only
+  `unknown` means the gateway might succeed if asked again.
+
+  This replaces a section added earlier the same day warning that `unknown`/500
+  was ambiguous — it was, and the gateway has since given its refusals codes
+  (panmail#58, from panmail#56). The warning was accurate for about six hours.
 
 ## [0.1.0-rc.2] — 2026-09-11
 

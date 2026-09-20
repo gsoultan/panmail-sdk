@@ -1082,3 +1082,85 @@ func TestAClientIsSafeToUseFromManyGoroutines(t *testing.T) {
 		t.Errorf("headers arrived %d/%d times, want %d each", seen["test-key"], seen["abc"], want)
 	}
 }
+
+// A suppressed recipient is a decision, not a failure: the same request is
+// refused the same way until the address comes off the send or the suppression
+// is lifted. Before the gateway had a code for it, it arrived as "unknown" with
+// a 500 and was indistinguishable from the gateway having broken — which is the
+// one reading that makes a caller retry it forever.
+func TestASuppressedRecipientIsItsOwnRefusal(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		refuse(w, http.StatusBadRequest, "failed_precondition",
+			"recipient bounced@example.net is suppressed: hard bounce")
+	})
+
+	_, err := client(t, g).Send(context.Background(), hello())
+	if err == nil {
+		t.Fatal("Send did not fail")
+	}
+
+	var suppressed *panmail.SuppressedRecipientError
+	if !errors.As(err, &suppressed) {
+		t.Fatalf("errors.As could not reach *SuppressedRecipientError from %T: %v", err, err)
+	}
+
+	// The address and the reason travel in the message, deliberately: the
+	// gateway sends them as prose and parsing prose would break on a reword.
+	for _, want := range []string{"bounced@example.net", "hard bounce"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Error() = %q, want it to mention %q", err, want)
+		}
+	}
+
+	// And it still unwraps to the APIError carrying the code, like every other
+	// refusal.
+	var apiErr *panmail.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatal("errors.As could not reach *APIError")
+	}
+	if apiErr.Code != "failed_precondition" {
+		t.Errorf("Code = %q, want failed_precondition", apiErr.Code)
+	}
+}
+
+// It is not a rate limit, a full queue or an auth problem, and a caller
+// branching on those must not catch it by accident.
+func TestASuppressedRecipientIsNotTheOtherRefusals(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		refuse(w, http.StatusBadRequest, "failed_precondition",
+			"recipient bounced@example.net is suppressed: complained")
+	})
+
+	_, err := client(t, g).Send(context.Background(), hello())
+
+	for name, caught := range map[string]bool{
+		"RateLimitedError": errors.As(err, new(*panmail.RateLimitedError)),
+		"BacklogFullError": errors.As(err, new(*panmail.BacklogFullError)),
+		"AuthError":        errors.As(err, new(*panmail.AuthError)),
+	} {
+		if caught {
+			t.Errorf("a suppressed recipient was also caught as %s", name)
+		}
+	}
+}
+
+// The gateway's other permanent refusals keep their code and stay APIErrors:
+// there is nothing to branch on beyond "fix the request", and inventing a type
+// per cause would be noise.
+func TestAnUnusableRequestKeepsItsCode(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		refuse(w, http.StatusBadRequest, "invalid_argument",
+			"provider 0f8b does not exist")
+	})
+
+	_, err := client(t, g).Send(context.Background(), hello())
+
+	var suppressed *panmail.SuppressedRecipientError
+	if errors.As(err, &suppressed) {
+		t.Error("invalid_argument was classified as a suppressed recipient")
+	}
+	var apiErr *panmail.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "invalid_argument" {
+		t.Errorf("want an APIError carrying invalid_argument, got %T: %v", err, err)
+	}
+}

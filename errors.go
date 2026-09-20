@@ -11,13 +11,11 @@ import (
 // Connect error code the gateway sent — "invalid_argument", "internal" and so
 // on — and Status is the HTTP status it arrived with.
 //
-// A Code of "unknown" with Status 500 is worth reading the Message for rather
-// than retrying. The gateway maps only its two capacity refusals to a Connect
-// code; every other refusal a send can make arrives as a bare error, which
-// Connect renders as "unknown". So this one value covers both "the gateway
-// broke, try later" and refusals that will never succeed — a suppressed
-// recipient being the common one, which refuses the whole message and stays
-// refused until the suppression is lifted.
+// Code tells you whether retrying can help. "unknown" is a failure — storage,
+// a provider connection — and is the one worth a backoff. Everything else is a
+// refusal: the same request answered the same way until something changes, so
+// "invalid_argument" wants the request fixed rather than repeated. The refusals
+// worth branching on have their own types; this is what is left.
 type APIError struct {
 	Code    string
 	Message string
@@ -62,6 +60,28 @@ func (e *BacklogFullError) Error() string {
 
 func (e *BacklogFullError) Unwrap() error { return e.err }
 
+// SuppressedRecipientError reports a send addressed to someone on the tenant's
+// suppression list.
+//
+// It refuses the whole message, not just that recipient's copy, and it will be
+// refused identically until the address is removed from the send or the
+// suppression is lifted. Retrying spends attempts on an answer that cannot
+// move.
+//
+// The address and the reason are in the message rather than in fields. The
+// gateway sends them as prose, and parsing prose would make this client break
+// the next time somebody rewords it — a worse dependency than reading the
+// message.
+type SuppressedRecipientError struct {
+	err error
+}
+
+func (e *SuppressedRecipientError) Error() string {
+	return fmt.Sprintf("panmail: a recipient is suppressed, so the whole message was refused: %v", e.err)
+}
+
+func (e *SuppressedRecipientError) Unwrap() error { return e.err }
+
 // AuthError reports that the API key was missing, rejected, or lacks the
 // email:send scope.
 type AuthError struct {
@@ -81,6 +101,13 @@ const (
 	codeResourceExhausted = "resource_exhausted"
 	codeUnauthenticated   = "unauthenticated"
 	codePermissionDenied  = "permission_denied"
+
+	// codeFailedPrecondition is the gateway's answer to a suppressed
+	// recipient, and only to that on the send path. It is documented as such
+	// rather than inferred: before the gateway had a code for it, a suppressed
+	// recipient arrived as "unknown" with a 500 and was indistinguishable from
+	// the gateway having broken.
+	codeFailedPrecondition = "failed_precondition"
 )
 
 // classify turns a refusal into something a caller can act on.
@@ -113,6 +140,8 @@ func classify(apiErr *APIError, header http.Header) error {
 			return &RateLimitedError{RetryAfter: retryAfter, err: apiErr}
 		}
 		return &BacklogFullError{err: apiErr}
+	case codeFailedPrecondition:
+		return &SuppressedRecipientError{err: apiErr}
 	case codeUnauthenticated, codePermissionDenied:
 		return &AuthError{err: apiErr}
 	default:

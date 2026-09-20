@@ -13,6 +13,7 @@ use Panmail\Exception\AuthException;
 use Panmail\Exception\BacklogFullException;
 use Panmail\Exception\InvalidMessageException;
 use Panmail\Exception\RateLimitedException;
+use Panmail\Exception\SuppressedRecipientException;
 use Panmail\Exception\TransportException;
 use Panmail\Message;
 use Panmail\Status;
@@ -718,6 +719,75 @@ final class ClientTest extends TestCase
         $this->expectException(InvalidMessageException::class);
 
         new Client($baseUrl, 'k');
+    }
+
+    /**
+     * A suppressed recipient is a decision, not a failure: the same request is
+     * refused the same way until the address comes off the send or the
+     * suppression is lifted. Before the gateway had a code for it, it arrived
+     * as "unknown" with a 500 and was indistinguishable from the gateway
+     * having broken — the one reading that makes a caller retry it forever.
+     */
+    public function testASuppressedRecipientIsItsOwnRefusal(): void
+    {
+        $transport = new FakeTransport(self::refusal(
+            400,
+            'failed_precondition',
+            'recipient bounced@example.net is suppressed: hard bounce'
+        ));
+
+        try {
+            self::client($transport)->send(self::hello());
+            self::fail('the send was accepted');
+        } catch (SuppressedRecipientException $refusal) {
+            // Prose, deliberately: parsing it would break on a reword.
+            self::assertStringContainsString('bounced@example.net', $refusal->getMessage());
+            self::assertStringContainsString('hard bounce', $refusal->getMessage());
+            self::assertSame('failed_precondition', $refusal->connectCode);
+            self::assertSame(400, $refusal->status);
+        }
+    }
+
+    /** It is still an ApiException, and none of the other refusals. */
+    public function testASuppressedRecipientIsNotTheOtherRefusals(): void
+    {
+        $transport = new FakeTransport(self::refusal(
+            400,
+            'failed_precondition',
+            'recipient bounced@example.net is suppressed: complained'
+        ));
+
+        try {
+            self::client($transport)->send(self::hello());
+            self::fail('the send was accepted');
+        } catch (ApiException $refusal) {
+            // Exactly this class, which is what says it is none of the
+            // siblings: a caller branching on RateLimitedException,
+            // BacklogFullException or AuthException must not catch a
+            // suppression by accident. Asserting each of those separately
+            // reads better but is vacuous once the type is narrowed, which is
+            // what PHPStan says about it.
+            self::assertSame(SuppressedRecipientException::class, $refusal::class);
+        }
+    }
+
+    /**
+     * The gateway's other permanent refusals keep their code and stay plain
+     * ApiExceptions: there is nothing to branch on beyond "fix the request".
+     */
+    public function testAnUnusableRequestKeepsItsCode(): void
+    {
+        $transport = new FakeTransport(
+            self::refusal(400, 'invalid_argument', 'provider 0f8b does not exist')
+        );
+
+        try {
+            self::client($transport)->send(self::hello());
+            self::fail('the send was accepted');
+        } catch (ApiException $refusal) {
+            self::assertNotInstanceOf(SuppressedRecipientException::class, $refusal);
+            self::assertSame('invalid_argument', $refusal->connectCode);
+        }
     }
 
 }
