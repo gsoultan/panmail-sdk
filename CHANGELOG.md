@@ -8,32 +8,10 @@ The three language packages share a version number and are released together.
 
 ## [Unreleased]
 
-### Added
-
-- **A typed refusal for a suppressed recipient** — `SuppressedRecipientError`,
-  `SuppressedRecipientException`, `SuppressedRecipientError` — classified from
-  the gateway's new `failed_precondition`.
-
-  A suppressed address refuses the **whole** message, not just that recipient's
-  copy, and stays refused until the address comes off the send or the
-  suppression is lifted. It reads like a per-recipient problem and is not, which
-  is why it is worth its own type.
-
-  The address and the reason stay in the message rather than becoming fields:
-  the gateway sends them as prose, and parsing prose would break these clients
-  the next time somebody rewords it.
-
-### Changed
-
-- **`docs/WIRE.md` now splits answers by refusal versus failure** rather than
-  listing codes. That is the distinction that decides whether to retry, and only
-  `unknown` means the gateway might succeed if asked again.
-
-  This replaces a section added earlier the same day warning that `unknown`/500
-  was ambiguous — it was, and the gateway has since given its refusals codes
-  (panmail#58, from panmail#56). The warning was accurate for about six hours.
-
-## [0.1.0-rc.2] — 2026-09-11
+Everything here ships as **0.1.0-rc.2**, which `node/package.json` already
+carries. It is not dated because it is not tagged: v0.1.0-rc.1 is the only
+tag that exists, and a date on a release that has not happened is a lie in
+the one file people read to find out what happened.
 
 Re-checked against the gateway, which had moved. Three things this SDK asserted
 turned out to be wrong rather than merely out of date, and all three were
@@ -80,6 +58,19 @@ assumptions about panmail that only broke when somebody opened it.
   build the same wire body with nothing comparing theirs to anything.
 
 ### Added
+
+- **A typed refusal for a suppressed recipient** — `SuppressedRecipientError`,
+  `SuppressedRecipientException`, `SuppressedRecipientError` — classified from
+  the gateway's new `failed_precondition`.
+
+  A suppressed address refuses the **whole** message, not just that recipient's
+  copy, and stays refused until the address comes off the send or the
+  suppression is lifted. It reads like a per-recipient problem and is not, which
+  is why it is worth its own type.
+
+  The address and the reason stay in the message rather than becoming fields:
+  the gateway sends them as prose, and parsing prose would break these clients
+  the next time somebody rewords it.
 
 - Go moves to **1.27**, from 1.21. The CI matrix tests the floor and `stable`,
   so a future release cannot break the build unnoticed. Because the `go`
@@ -131,6 +122,16 @@ assumptions about panmail that only broke when somebody opened it.
   It also pins node 24 rather than 22, because of npm and not node: trusted
   publishing needs npm >= 11.5.1 and node 22 ships 10.9.8. The package's own
   floor is still node 18, tested by the `node-runtime` job.
+
+### Changed
+
+- **`docs/WIRE.md` now splits answers by refusal versus failure** rather than
+  listing codes. That is the distinction that decides whether to retry, and only
+  `unknown` means the gateway might succeed if asked again.
+
+  This replaces a section added earlier the same day warning that `unknown`/500
+  was ambiguous — it was, and the gateway has since given its refusals codes
+  (panmail#58, from panmail#56). The warning was accurate for about six hours.
 
 ## [0.1.0-rc.1] — 2026-09-02
 
