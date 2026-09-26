@@ -8,10 +8,13 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
-Everything here ships in the next tag. It is not dated because it is not
-tagged: v0.1.0-rc.1 is the only tag that exists, and a date on a release that
-has not happened is a lie in the one file people read to find out what
-happened.
+Nothing yet.
+
+## [0.1.0-rc.2] — 2026-09-26
+
+The first release in Go and PHP alone. The Node package is gone — see Removed —
+and with it the only publishing step that ever needed a credential, so a tag is
+now the whole release.
 
 Re-checked against the gateway, which had moved. Three things this SDK asserted
 turned out to be wrong rather than merely out of date, and all three were
