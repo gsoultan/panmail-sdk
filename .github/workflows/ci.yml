@@ -100,70 +100,6 @@ jobs:
       - run: composer coverage
       - run: python3 ../scripts/coverage-floor.py coverage.xml 95
 
-  node:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: node
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      # Frozen everywhere, including dependabot's own pull requests.
-      #
-      # Exempting dependabot looked kinder — it opens npm bumps it cannot
-      # regenerate bun.lock for, so they failed on the lockfile rather than on
-      # anything about the bump. But unfreezing only moved the failure: the PR
-      # went green having never validated the lock, and merging it turned main
-      # red instead. A red PR blocks one change; a red main blocks everyone.
-      #
-      # So an npm bump needs its lock refreshed before it can merge:
-      #
-      #     gh pr checkout <n> && (cd node && bun install) \
-      #       && git commit -am 'refresh bun.lock' && git push
-      #
-      # Automating that means committing to a dependabot branch from CI, which
-      # needs pull_request_target and a write token running bun install over a
-      # dependency version nobody has reviewed yet. Not worth it for two
-      # devDependencies.
-      - run: bun install --frozen-lockfile
-      - run: bun x tsc -p tsconfig.json --noEmit
-      - run: bun test src
-      # dist/ is what npm publishes and is not in the repository, so a build
-      # that only breaks at publish time would break it in front of a release.
-      - run: bun run build
-      # The declarations in dist/ are the API as a consumer sees it, and the
-      # typecheck above never looks at them — it checks src/. This compiles a
-      # consumer against dist/ with skipLibCheck off, which is the only way an
-      # unusable published type shows up before someone installs it.
-      - run: bun run check:types
-
-  # The suite above runs under bun, which is not Node: it has its own fetch,
-  # its own streams and its own idea of what is global. package.json promises
-  # `engines: { node: ">=18" }` to everyone who installs the package, and
-  # nothing was checking that promise on an actual Node.
-  node-runtime:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The floor package.json declares, and the current release.
-        node: ['18', '24']
-    defaults:
-      run:
-        working-directory: node
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      # After setup-bun, so this is the node first on PATH.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      # Plain node against dist/, which is what npm publishes and what a
-      # consumer on the floor version actually runs.
-      - run: node smoke.mjs
-
   proto:
     runs-on: ubuntu-latest
     steps:
@@ -181,7 +117,7 @@ jobs:
       # though — whatever version is in the gateway's go.mod — so main is only
       # covered once it is tagged.
       #
-      # It also covers Go only. PHP and Node build the same wire body by hand,
-      # and nothing automated compares theirs to anything. That is the gap that
-      # is left. See docs/WIRE.md.
+      # It also covers Go only. PHP builds the same wire body by hand, and
+      # nothing automated compares it to anything. That is the gap that is
+      # left. See docs/WIRE.md.
       - run: buf lint proto

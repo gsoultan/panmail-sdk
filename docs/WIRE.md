@@ -311,7 +311,7 @@ deadline with nobody having decided. It does not say a message was refused, it
 says a review queue went unwatched.
 
 The SDKs expose all twelve — `panmail.TriggerEventMailHeld`,
-`TriggerEvent::MAIL_HELD`, `TriggerEvent.MailHeld` — checked against
+`TriggerEvent::MAIL_HELD` — checked against
 [`testdata/webhook-events.json`](../testdata/webhook-events.json), which is
 generated from the proto.
 
@@ -348,9 +348,6 @@ event, err := panmail.VerifyWebhook(secret, r.Header, body)
 ```
 ```php
 $event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('php://input'));
-```
-```ts
-const event = verifyWebhook(secret, req.headers, req.body);
 ```
 
 [`testdata/webhook-signatures.json`](../testdata/webhook-signatures.json) holds
