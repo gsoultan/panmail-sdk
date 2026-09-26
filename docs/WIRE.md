@@ -165,6 +165,16 @@ may have.* What separates them is the **`Retry-After` response header**:
 Every SDK in this repo keys off exactly that presence. If you write your own
 client, key off it too.
 
+"The send rate" is two rates. Each provider can have its own ceiling as well as
+the tenant's, and the gateway decides both in one step so that a send one
+provider refuses does not spend the tenant's allowance. The refusal does not
+say which was hit. `Retry-After` is correct either way — it is how long until
+the combined decision would allow the send — but it cannot tell you that a
+different provider might have taken the message now.
+
+The backlog check is the tenant's only. The outbox is shared by every provider,
+so a per-provider rate says nothing about how deep it is.
+
 #### Retrying
 
 **Do not retry a send whose outcome you do not know.** Sending is not

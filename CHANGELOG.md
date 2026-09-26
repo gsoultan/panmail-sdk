@@ -114,6 +114,15 @@ assumptions about panmail that only broke when somebody opened it.
 
 ### Changed
 
+- **A rate limit may be the provider's, not only the tenant's.** The gateway
+  now gives each provider its own send ceiling (panmail#60) and decides it
+  together with the tenant's, so `RateLimitedError` /
+  `RateLimitedException` covers both — and the refusal does not say which was
+  hit. Nothing in the clients changed: it is the same `resource_exhausted` with
+  the same `Retry-After`, and `RetryAfter` is correct for the combined
+  decision. What it cannot tell a caller is that a different provider might have
+  taken the message now. The backlog check is still the tenant's alone.
+
 - **`docs/WIRE.md` now splits answers by refusal versus failure** rather than
   listing codes. That is the distinction that decides whether to retry, and only
   `unknown` means the gateway might succeed if asked again.
