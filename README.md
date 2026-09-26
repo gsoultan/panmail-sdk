@@ -161,11 +161,6 @@ log.Println(event.Event, event.TenantID, event.DeliveryID)
 $event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('php://input'));
 ```
 
-```ts
-// express.raw({ type: 'application/json' }) — express.json() discards the bytes
-const event = verifyWebhook(secret, req.headers, req.body);
-```
-
 Match `event.event` against the `TriggerEvent` constants rather than a string
 you typed — the gateway sends its enum name verbatim,
 `WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED`, not a dotted `mail.bounced`:

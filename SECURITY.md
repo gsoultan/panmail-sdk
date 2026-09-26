@@ -77,8 +77,10 @@ no secret *unsigned* rather than not delivering it, so an unsigned request is a
 real thing that arrives at a real endpoint. Set a secret on the subscription.
 
 The signature covers the bytes that arrived. Read the raw body and verify
-before parsing: `express.json()` has already thrown those bytes away, and a
-re-serialised payload will not verify.
+before parsing: anything that decodes first — a Go handler that hands `r.Body`
+straight to a JSON decoder, a PHP framework that has already populated a request
+object from `php://input` — has consumed those bytes, and a re-serialised
+payload will not verify.
 
 Verifying is necessary but not sufficient: match the event against the
 `TriggerEvent` constants rather than a string you typed. A handler comparing
