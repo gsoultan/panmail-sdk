@@ -1,125 +1,36 @@
 name: Release
 
-# One tag releases all three packages, because they share a version number.
-# Go needs nothing here — the module proxy serves whatever the tag points at —
-# and PHP is served by Packagist from the repository itself. Only npm needs
-# something pushed to it.
+# A tag is the release. Go is served by the module proxy from the tag and PHP
+# by Packagist from the repository, so there is nothing to publish and no
+# credential involved. That is also why a pushed tag cannot be taken back: the
+# proxy keeps a Go module version for good once it has served it.
 #
-# The same workflow runs as a dry run from the Actions tab. Deliberately the
-# same one: a separate dry-run workflow is a copy, and a copy drifts until it
-# is testing something the real release no longer does. Here the only
-# difference is the last step of each job.
+# What is left to check is that the tag agrees with CHANGELOG.md, which is now
+# the only place that says what a version is. This runs after the tag exists,
+# so it cannot stop one; it makes a tag with no release notes loud rather than
+# silent.
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Build and check everything, publish nothing'
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
 jobs:
-  # A tag that disagrees with the manifest would publish a version nobody can
-  # trace back. Cheaper to find out here than after it is on a registry, where
-  # a version number cannot be reused.
-  check-version:
+  changelog:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-      - id: version
+      - name: The tag has a dated CHANGELOG section
         run: |
-          node_version="$(node -p 'require("./node/package.json").version')"
-
-          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
-            # A dry run has no tag to check against. node/package.json is the
-            # only manifest carrying a version now, so there is nothing to
-            # cross-check it with and nothing to fail on.
-            echo "dry run at $node_version"
-            echo "version=$node_version" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           version="${GITHUB_REF_NAME#v}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "releasing $version; checking the manifest agrees with the tag"
-
-          if [ "$node_version" != "$version" ]; then
-            echo "::error::node/package.json is $node_version, tag is $version"
+          # "## [0.2.0] — 2026-10-01" is a release, dated the day it shipped.
+          # An undated section has not happened yet, so a tag pointing at one
+          # is ahead of its own notes. The dots are escaped because they are
+          # regex metacharacters and 0.2.0 would otherwise also match 0x2y0.
+          pattern="^## \[${version//./\\.}\] — [0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          if ! grep -Eq "$pattern" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no dated section for ${version}"
             exit 1
           fi
-
-  npm:
-    needs: check-version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      # Required for npm provenance, which is what lets anyone verify the
-      # published tarball was built from this commit by this workflow.
-      id-token: write
-    defaults:
-      run:
-        working-directory: node
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          # 24 rather than 22 because of npm, not node: trusted publishing
-          # needs npm >= 11.5.1 and node 22 still ships 10.9.8. The package
-          # itself supports node >= 18 — that floor is tested by the
-          # node-runtime job in ci.yml, not here.
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun x tsc -p tsconfig.json --noEmit
-      - run: bun test src
-      - run: bun run build
-      # The published .d.ts as a consumer sees them, before anyone can install
-      # them. The ordinary typecheck reads src/, which nobody installs.
-      - run: bun run check:types
-
-      # The dist-tag is not optional for a prerelease: npm refuses to publish
-      # one without --tag at all. And the obvious way to satisfy that — passing
-      # `latest` — is worse than the error, because it hands a release
-      # candidate to everyone running `npm install @gsoultan/panmail-sdk`.
-      # Prereleases go to `next`, where they have to be asked for by name.
-      - id: disttag
-        run: |
-          version="$(node -p 'require("./package.json").version')"
-          case "$version" in
-            *-*) tag=next ;;
-            *)   tag=latest ;;
-          esac
-          echo "npm will publish $version to the '$tag' tag"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-      # Everything above runs either way. Only this differs.
-      - name: Pack (dry run)
-        if: ${{ inputs.dry_run }}
-        # No provenance and no token: --dry-run resolves neither, and the point
-        # here is the tarball's contents and that the manifest is publishable.
-        run: npm publish --dry-run --access public --tag "${{ steps.disttag.outputs.tag }}"
-      # npm rather than bun: provenance is an npm feature.
-      #
-      # No NODE_AUTH_TOKEN. npm authenticates this over OIDC — a "trusted
-      # publisher" configured on the package pointing at this repository and
-      # this workflow *filename*, release.yml. There is no long-lived token to
-      # leak, rotate or leave behind in a fork.
-      #
-      # It is not a preference. An automation token cannot publish to an
-      # account that requires 2FA for writes, and npm no longer issues granular
-      # tokens with the bypass that used to make CI work. OIDC is the path.
-      #
-      # Bootstrapping needs one manual publish first: a trusted publisher is
-      # configured in a package's settings, and a package that has never been
-      # published has no settings. See CONTRIBUTING.
-      - name: Publish to npm
-        if: ${{ !inputs.dry_run }}
-        run: npm publish --provenance --access public --tag "${{ steps.disttag.outputs.tag }}"
-
+          echo "CHANGELOG.md has a dated section for ${version}"

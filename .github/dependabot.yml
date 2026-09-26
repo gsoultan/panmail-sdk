@@ -17,7 +17,3 @@ updates:
     schedule:
       interval: weekly
 
-  - package-ecosystem: npm
-    directory: /node
-    schedule:
-      interval: weekly

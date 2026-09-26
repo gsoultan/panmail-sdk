@@ -4,14 +4,14 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-The three language packages share a version number and are released together.
+Both language packages take their version from the tag, so they are always released together.
 
 ## [Unreleased]
 
-Everything here ships as **0.1.0-rc.2**, which `node/package.json` already
-carries. It is not dated because it is not tagged: v0.1.0-rc.1 is the only
-tag that exists, and a date on a release that has not happened is a lie in
-the one file people read to find out what happened.
+Everything here ships in the next tag. It is not dated because it is not
+tagged: v0.1.0-rc.1 is the only tag that exists, and a date on a release that
+has not happened is a lie in the one file people read to find out what
+happened.
 
 Re-checked against the gateway, which had moved. Three things this SDK asserted
 turned out to be wrong rather than merely out of date, and all three were
@@ -32,7 +32,7 @@ assumptions about panmail that only broke when somebody opened it.
   delivering the message or putting it in front of a person; and a caller who
   needs the difference has to subscribe to `MAIL_HELD` and `MAIL_EXPIRED`.
 
-  Corrected in all three clients, `docs/WIRE.md` and the README.
+  Corrected in both clients, `docs/WIRE.md` and the README.
 
 - **The webhook event vocabulary was documented wrong.** `docs/WIRE.md`, the
   README and every client's comments said the `X-Panmail-Event` header carries a
@@ -54,14 +54,14 @@ assumptions about panmail that only broke when somebody opened it.
   Since resolved on the gateway's side: its #17, on 2026-09-04, dropped the tag
   and took the published SDK as an ordinary test dependency, so it runs in every
   CI pass there. Two caveats remain and the comment now carries them — it guards
-  the *published* SDK rather than `main`, and it is Go only, so PHP and Node
-  build the same wire body with nothing comparing theirs to anything.
+  the *published* SDK rather than `main`, and it is Go only, so PHP builds the
+  same wire body with nothing comparing it to anything.
 
 ### Added
 
-- **A typed refusal for a suppressed recipient** — `SuppressedRecipientError`,
-  `SuppressedRecipientException`, `SuppressedRecipientError` — classified from
-  the gateway's new `failed_precondition`.
+- **A typed refusal for a suppressed recipient** — `*SuppressedRecipientError`
+  in Go and `SuppressedRecipientException` in PHP — classified from the
+  gateway's new `failed_precondition`.
 
   A suppressed address refuses the **whole** message, not just that recipient's
   copy, and stays refused until the address comes off the send or the
@@ -77,7 +77,7 @@ assumptions about panmail that only broke when somebody opened it.
   directive is >= 1.21, a consumer on an older toolchain fetches 1.27 rather
   than failing — unless they pin `GOTOOLCHAIN=local`, which is the one case
   where this is a hard requirement rather than an automatic upgrade.
-- **`TriggerEvent` constants in all three clients**, covering all twelve
+- **`TriggerEvent` constants in both clients**, covering all twelve
   `WebhookTriggerEvent` values, checked against `testdata/webhook-events.json`
   which is generated from the proto. `WebhookEvent.Event` is now typed rather
   than a bare string.
@@ -112,17 +112,6 @@ assumptions about panmail that only broke when somebody opened it.
   it. It is the vocabulary a receiver matches on, so it is part of this SDK's
   contract.
 
-- **npm now publishes over OIDC instead of a token.** The `v0.1.0-rc.1` release
-  failed with `E403 ... granular access token with bypass 2fa enabled is
-  required`, and npm no longer issues tokens with that bypass — so a
-  token-based release is not merely worse, it is unavailable. The workflow
-  authenticates as a trusted publisher instead, with no long-lived credential
-  anywhere.
-
-  It also pins node 24 rather than 22, because of npm and not node: trusted
-  publishing needs npm >= 11.5.1 and node 22 ships 10.9.8. The package's own
-  floor is still node 18, tested by the `node-runtime` job.
-
 ### Changed
 
 - **`docs/WIRE.md` now splits answers by refusal versus failure** rather than
@@ -132,6 +121,26 @@ assumptions about panmail that only broke when somebody opened it.
   This replaces a section added earlier the same day warning that `unknown`/500
   was ambiguous — it was, and the gateway has since given its refusals codes
   (panmail#58, from panmail#56). The warning was accurate for about six hours.
+
+### Removed
+
+- **The Node package.** `@gsoultan/panmail-sdk` was written and never
+  published, and it will not be. A client one `fetch` call deep is not worth
+  what npm would have cost: an account, a trusted-publishing bootstrap that
+  needed a manual first publish from a laptop with 2FA before any release could
+  run, a release pipeline, and a third place for the wire format to drift. From
+  Node, POST the JSON yourself — the README's *Not using an SDK* section and
+  `docs/WIRE.md` are the whole contract.
+
+  **Nobody is broken by this.** The package never reached the registry, so
+  there is no installed copy to strand.
+
+  With it went the only manifest that carried a version, so the release
+  workflow no longer compares a tag against one. It checks instead that a tag
+  has a dated section in this file, which is now the only place that says what
+  a version is. It runs after the tag exists and cannot stop one — a Go module
+  version cannot be withdrawn once the proxy has served it — but it makes a tag
+  with no release notes loud rather than silent.
 
 ## [0.1.0-rc.1] — 2026-09-02
 

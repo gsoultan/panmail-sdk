@@ -1,9 +1,9 @@
 # panmail-sdk
 
 Clients for sending mail through a [panmail](https://github.com/gsoultan/panmail)
-gateway, in Go, PHP and Node.
+gateway, in Go and PHP.
 
-All three are the same small library in three languages: **one call**, typed
+Both are the same small library in two languages: **one call**, typed
 refusals you can act on, and a deliberate refusal to retry anything whose
 outcome is unknown. None of them depends on the gateway's source — they speak
 [the wire contract](docs/WIRE.md), which is also what you want if you would
@@ -13,7 +13,11 @@ rather POST JSON yourself or send over SMTP.
 | --- | --- | --- | --- |
 | **Go** | `github.com/gsoultan/panmail-sdk` | `go get github.com/gsoultan/panmail-sdk` | none — stdlib only |
 | **PHP** | `gsoultan/panmail-sdk` | `composer require gsoultan/panmail-sdk` | ext-curl, ext-json |
-| **Node** | `@gsoultan/panmail-sdk` | `npm i @gsoultan/panmail-sdk` | none — `fetch` |
+
+**There is no Node package.** One was written, and withdrawn before it was ever
+published: a client that is one `fetch` call deep is not worth a registry
+account, a release pipeline and a second place for the wire format to drift.
+From Node, POST the JSON yourself — see [Not using an SDK](#not-using-an-sdk).
 
 ## Getting a key
 
@@ -77,32 +81,6 @@ try {
 }
 ```
 
-## Node
-
-```ts
-import { PanmailClient, RateLimitedError } from '@gsoultan/panmail-sdk';
-
-const client = new PanmailClient('https://mail.example.com', process.env.PANMAIL_API_KEY!);
-
-try {
-  const result = await client.send({
-    providerId: '0f8b...',
-    from: 'noreply@example.com',
-    to: ['someone@example.org'],
-    subject: 'Your receipt',
-    html: '<p>Thanks for your order.</p>',
-  });
-  console.log('queued', result.messageId);
-} catch (error) {
-  if (error instanceof RateLimitedError) {
-    // Safe to repeat after error.retryAfter seconds.
-  }
-  throw error;
-}
-```
-
----
-
 ## What "sent" means
 
 A successful send means the gateway **wrote the message to its outbox**, not
@@ -122,13 +100,13 @@ Both answer `resource_exhausted` / HTTP 429, on purpose: they are the same
 answer to you — *you are asking for more than you may have.* What separates
 them is whether the gateway attached a delay.
 
-| Refusal | Go | PHP | Node |
-| --- | --- | --- | --- |
-| Over the send rate | `*RateLimitedError` | `RateLimitedException` | `RateLimitedError` |
-| Backlog full | `*BacklogFullError` | `BacklogFullException` | `BacklogFullError` |
-| Recipient suppressed | `*SuppressedRecipientError` | `SuppressedRecipientException` | `SuppressedRecipientError` |
-| Key rejected | `*AuthError` | `AuthException` | `AuthError` |
-| Anything else | `*APIError` | `ApiException` | `ApiError` |
+| Refusal | Go | PHP |
+| --- | --- | --- |
+| Over the send rate | `*RateLimitedError` | `RateLimitedException` |
+| Backlog full | `*BacklogFullError` | `BacklogFullException` |
+| Recipient suppressed | `*SuppressedRecipientError` | `SuppressedRecipientException` |
+| Key rejected | `*AuthError` | `AuthException` |
+| Anything else | `*APIError` | `ApiException` |
 
 A **rate limit** carries a delay and is safe to repeat after it.
 
@@ -150,7 +128,6 @@ the message — which every SDK will wait out if you ask:
 ```go
 panmail.New(url, key, panmail.WithRateLimitRetries(3))                  // Go
 new Client($url, $key, ['rateLimitRetries' => 3]);                      // PHP
-new PanmailClient(url, key, { rateLimitRetries: 3 })                    // Node
 ```
 
 It is off by default because it makes `send` block for as long as the gateway
@@ -235,7 +212,6 @@ not set `X-API-Key`, case insensitively.
 ```bash
 go test -race ./...                  # Go
 cd php  && composer test             # PHP
-cd node && bun test src              # Node
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) has the rest: what a change needs, how the

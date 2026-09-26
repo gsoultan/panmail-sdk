@@ -14,8 +14,8 @@ sent, and what happened. You should get an acknowledgement within a few days.
 An API key is a sending credential for a whole tenant, so the client treats it
 as the thing most worth not losing.
 
-**The key is never sent anywhere but the endpoint you configured.** None of the
-three clients follows an HTTP redirect. This is deliberate rather than
+**The key is never sent anywhere but the endpoint you configured.** Neither
+client follows an HTTP redirect. This is deliberate rather than
 incidental: the key travels in `X-API-Key`, and a custom header is not on any
 HTTP client's list of credentials to drop when a redirect crosses to another
 host — that list knows about `Authorization` and `Cookie`. Following a redirect
@@ -27,7 +27,6 @@ If you supply your own HTTP client, keep that property:
 | Language | How |
 | --- | --- |
 | Go | The client is copied and given a `CheckRedirect` that refuses. Nothing to do. |
-| Node | `redirect: 'error'` is set on every request. |
 | PHP | A custom `Transport` must not enable `CURLOPT_FOLLOWLOCATION`. |
 
 **A response is bounded before it is read.** Every client stops at 1 MiB. A send
@@ -43,16 +42,15 @@ typo'd or copy-pasted `http://` production URL is not something to discover
 from a packet capture.
 
 **The base URL cannot carry credentials.** `https://user:pass@gateway` is
-refused by all three. The URL travels into every error the client reports, and
-an error is a thing that gets logged — Node's `fetch` refuses such a URL anyway,
-but by throwing a `TypeError` that quotes the whole thing, password included.
+refused by both. The URL travels into every error the client reports, and an
+error is a thing that gets logged.
 The API key authenticates the send; if something in front of the gateway wants
 basic auth as well, set the header explicitly.
 
 **A header cannot be made to carry a second header.** A carriage return or
 newline ends a header line, so a value holding one is an extra header the
 caller never wrote — and a tracing or correlation header built out of something
-a user supplied is exactly where that happens. All three clients refuse a header
+a user supplied is exactly where that happens. Both clients refuse a header
 name outside RFC 9110's token set, and a value carrying any control character,
 when the client is constructed rather than on the first send.
 
@@ -71,7 +69,7 @@ Delivery events arrive as a signed POST. `docs/WIRE.md` documents the scheme;
 the short version is HMAC-SHA256 over `timestamp + "." + raw_body`, with the
 timestamp signed so a captured notification cannot be replayed later.
 
-All three clients verify it, and each of these is a test rather than an
+Both clients verify it, and each of these is a test rather than an
 intention: the comparison is constant time, the timestamp window is checked in
 **both** directions, and **a delivery carrying no signature is refused**. That
 last one matters more than it looks — the gateway delivers a subscription with
@@ -90,10 +88,10 @@ bounce nobody was told about.
 
 ## What checks this
 
-The properties above are each held by a test in all three languages, so a change
-that removes one turns the others red rather than shipping quietly. Beyond that:
+The properties above are each held by a test in both languages, so a change
+that removes one turns the other red rather than shipping quietly. Beyond that:
 
-- **CodeQL** runs on every push and weekly, over Go and TypeScript, with the
+- **CodeQL** runs on every push and weekly, over Go, with the
   `security-and-quality` queries.
 - **PHPStan at `max`** covers the shipped PHP, which CodeQL does not analyse —
   and which is where the one injectable bug found so far actually was.

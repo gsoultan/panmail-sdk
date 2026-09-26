@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs everything CI runs, for whichever of the three toolchains are installed.
+# Runs everything CI runs, for whichever of the two toolchains are installed.
 #
-# Nobody has all three to hand, and a contributor who has only Go should not be
+# Nobody has both to hand, and a contributor who has only Go should not be
 # blocked — but they should be told what went unchecked rather than left to
 # assume a green run covered everything. Missing toolchains are skipped and
 # listed at the end; anything that actually ran and failed fails this script.
@@ -83,23 +83,6 @@ elif have php; then
     skipped+=('PHP (run: cd php && composer install)')
 else
     skipped+=('PHP (no php)')
-fi
-
-echo 'Node'
-if have bun; then
-    run 'tsc --noEmit' bash -c 'cd node && bun x tsc -p tsconfig.json --noEmit'
-    run 'bun test' bash -c 'cd node && bun test src'
-    run 'build' bash -c 'cd node && bun run build'
-    run 'published types (consumer)' bash -c 'cd node && bun run check:types'
-    if have node; then
-        # The suite runs under bun. This is the package on the runtime
-        # package.json promises.
-        run "smoke on $(node --version)" bash -c 'cd node && node smoke.mjs'
-    else
-        skipped+=('node smoke (no node)')
-    fi
-else
-    skipped+=('Node (no bun)')
 fi
 
 echo
