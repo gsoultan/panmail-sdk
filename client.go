@@ -26,15 +26,33 @@ const apiKeyHeader = "X-API-Key"
 const sendProcedure = "/panmail.v1.EmailService/SendEmail"
 
 // maxResponseBytes bounds what a single response may cost in memory. A send
-// response is a message id and a status; anything approaching this is a proxy
-// error page, not the gateway.
+// response is a message id and a status, and a page of providers is a few
+// hundred bytes for each of providerPageSize; anything approaching this is a
+// proxy error page, not the gateway.
 const maxResponseBytes = 1 << 20
+
+// call is one Connect procedure and what its refusals mean.
+//
+// The same code can mean different things from different procedures:
+// failed_precondition is a suppressed recipient when a send is refused, and
+// nothing of the kind anywhere else. So the classification travels with the
+// route rather than being applied to every response alike.
+type call struct {
+	procedure string
+	// what names the call in a transport error: "the send did not complete".
+	what     string
+	classify func(*APIError, http.Header) error
+}
+
+var sendCall = call{procedure: sendProcedure, what: "the send", classify: classifySend}
 
 // Client sends mail through a panmail gateway. Safe for concurrent use.
 type Client struct {
-	endpoint string
-	apiKey   string
-	opts     options
+	// baseURL is the gateway's origin with any trailing slash removed; each
+	// call appends its own procedure.
+	baseURL string
+	apiKey  string
+	opts    options
 }
 
 // New builds a client for the gateway at baseURL, authenticating with apiKey.
@@ -55,9 +73,9 @@ func New(baseURL, apiKey string, opts ...Option) (*Client, error) {
 	}
 
 	return &Client{
-		endpoint: strings.TrimRight(baseURL, "/") + sendProcedure,
-		apiKey:   apiKey,
-		opts:     opt,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		apiKey:  apiKey,
+		opts:    opt,
 	}, nil
 }
 
@@ -90,9 +108,13 @@ func (c *Client) Send(ctx context.Context, msg Message) (Result, error) {
 	}
 
 	for attempt := 0; ; attempt++ {
-		result, err := c.post(ctx, body)
+		var decoded struct {
+			MessageID string `json:"messageId"`
+			Status    Status `json:"status"`
+		}
+		err := c.post(ctx, sendCall, body, &decoded)
 		if err == nil {
-			return result, nil
+			return Result{MessageID: decoded.MessageID, Status: decoded.Status}, nil
 		}
 
 		wait, ok := c.waitBefore(err, attempt)
@@ -106,12 +128,13 @@ func (c *Client) Send(ctx context.Context, msg Message) (Result, error) {
 	}
 }
 
-// post performs one round trip. Every return path has already drained and
-// closed the response body, so the connection goes back to the pool.
-func (c *Client) post(ctx context.Context, body []byte) (Result, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+// post performs one round trip to a procedure and decodes a 200 into out. Every
+// return path has already drained and closed the response body, so the
+// connection goes back to the pool.
+func (c *Client) post(ctx context.Context, rpc call, body []byte, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+rpc.procedure, bytes.NewReader(body))
 	if err != nil {
-		return Result{}, fmt.Errorf("panmail: building the request failed: %w", err)
+		return fmt.Errorf("panmail: building the request failed: %w", err)
 	}
 
 	for name, value := range c.opts.headers {
@@ -122,35 +145,44 @@ func (c *Client) post(ctx context.Context, body []byte) (Result, error) {
 
 	res, err := c.opts.httpClient.Do(req)
 	if err != nil {
-		// Deliberately not classified and never retried: a transport error is
-		// the one outcome where the client does not know whether the gateway
-		// took the message.
-		return Result{}, fmt.Errorf("panmail: the send did not complete: %w", err)
+		// Deliberately not classified and never retried: for a send, a
+		// transport error is the one outcome where the client does not know
+		// whether the gateway took the message. A listing is safe to repeat,
+		// but repeating it is the caller's decision, as with any other error.
+		return fmt.Errorf("panmail: %s did not complete: %w", rpc.what, err)
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, res.Body)
 		_ = res.Body.Close()
 	}()
 
-	payload, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes))
+	// One byte past the bound, so a body that reaches it can be told from one
+	// that fits exactly.
+	payload, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
 	if err != nil {
-		return Result{}, fmt.Errorf("panmail: reading the response failed: %w", err)
+		return fmt.Errorf("panmail: reading the response failed: %w", err)
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return Result{}, classify(decodeError(payload, res.StatusCode), res.Header)
+		// A refusal is still classified when its body was cut short: the
+		// status and code decide what it is, and a proxy's error page can run
+		// long.
+		if len(payload) > maxResponseBytes {
+			payload = payload[:maxResponseBytes]
+		}
+		return rpc.classify(decodeError(payload, res.StatusCode), res.Header)
 	}
 
-	var decoded struct {
-		MessageID string `json:"messageId"`
-		Status    Status `json:"status"`
-		Error     string `json:"error"`
+	// A success cut short can never decode, and "unexpected end of JSON
+	// input" would send the reader looking for a malformed body rather than a
+	// long one.
+	if len(payload) > maxResponseBytes {
+		return fmt.Errorf("panmail: the gateway's response exceeded %d bytes", maxResponseBytes)
 	}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return Result{}, fmt.Errorf("panmail: the gateway's response was not json: %w", err)
+	if err := json.Unmarshal(payload, out); err != nil {
+		return fmt.Errorf("panmail: the gateway's response was not json: %w", err)
 	}
-
-	return Result{MessageID: decoded.MessageID, Status: decoded.Status}, nil
+	return nil
 }
 
 // decodeError reads the Connect error envelope: {"code":..., "message":...}.

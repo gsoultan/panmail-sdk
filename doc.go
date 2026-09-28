@@ -23,6 +23,16 @@
 // once it has been delivered: result.MessageID is what later delivery events
 // and webhooks are keyed by.
 //
+// # Providers
+//
+// ListProviders returns the ids Message.ProviderID takes, for a key that also
+// holds the providers:read scope:
+//
+//	providers, err := client.ListProviders(ctx, panmail.ProviderFilter{Type: panmail.ProviderTypeSES})
+//
+// A key minted for sending has email:send alone. See ListProviders for why a
+// second key for setup is worth considering before widening that one.
+//
 // # Retries
 //
 // This client does not retry a send whose outcome it does not know. Sending is

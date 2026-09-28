@@ -1,19 +1,28 @@
 # Proto
 
-The wire contract for sending, copied **verbatim** from the gateway so the two
-cannot drift. Three files, which is the whole import closure of
-`EmailService.SendEmail`:
+The wire contract, copied **verbatim** from the gateway so the two cannot
+drift: the import closures of the two procedures the SDKs call,
+`EmailService.SendEmail` and `EmailProviderService.ListEmailProviders`, and the
+webhook vocabulary.
 
 | File | Why it is here |
 | --- | --- |
 | `email_service.proto` | `EmailService`, `SendEmailRequest`, `SendEmailResponse` |
 | `common.proto` | `Attachment` |
 | `event.proto` | `EmailEventType`, the enum `SendEmailResponse.status` uses |
+| `webhook.proto` | `WebhookTriggerEvent`, what a webhook delivery carries |
+| `email_provider_service.proto` | `ListEmailProvidersRequest`, `ListEmailProvidersResponse` — and, because the file is copied whole, the rest of `EmailProviderService`, which the SDKs never call |
+| `email_provider.proto` | `EmailProvider` and its vendor configurations |
+| `provider_type.proto` | `ProviderType` |
 
 You do **not** need these to use the SDKs — they speak the protocol already.
 They are here for the case the SDKs do not cover: generating your own client,
-in a language none of the four SDKs serve, or in a codebase that already has a
-protobuf toolchain and would rather use it.
+in a language neither SDK serves, or in a codebase that already has a protobuf
+toolchain and would rather use it.
+
+`buf.yaml` exempts `email_provider_service.proto` from three RPC naming rules:
+`TestEmailProviderConfig` reuses the create request, and the file is the
+gateway's to change, not this copy's.
 
 ## Generating
 

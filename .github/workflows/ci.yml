@@ -94,8 +94,9 @@ jobs:
       # from a decoded JSON body and an "Array to string conversion" in front
       # of a caller, which is exactly the bug it found in classify().
       - run: composer analyse
-      # A floor, not a target. The two statements it does not reach are a
-      # private constructor that exists to stop instantiation, and curl_init
+      # A floor, not a target. The statements it does not reach are the
+      # private constructors that stop the constant classes — Status,
+      # TriggerEvent, ProviderType — being instantiated, and curl_init
       # returning false.
       - run: composer coverage
       - run: python3 ../scripts/coverage-floor.py coverage.xml 95

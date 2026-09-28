@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// DefaultTimeout bounds a single send. Generous, because the gateway writes
-// the message to its outbox before answering and that is a disk write on a
-// possibly busy database — but finite, because a send that hangs holds
-// whatever request is waiting on it.
+// DefaultTimeout bounds a single request: a send, or one page of a provider
+// listing. Generous, because the gateway writes a message to its outbox before
+// answering and that is a disk write on a possibly busy database — but finite,
+// because a send that hangs holds whatever request is waiting on it.
 const DefaultTimeout = 30 * time.Second
 
 // An Option configures the client.
@@ -37,10 +37,12 @@ func WithHTTPClient(client *http.Client) Option {
 	return func(o *options) { o.httpClient = client }
 }
 
-// WithTimeout bounds each send. Ignored when WithHTTPClient is used.
+// WithTimeout bounds each request — a send, or one page of a provider listing,
+// so a listing that spans pages may take longer in all. Ignored when
+// WithHTTPClient is used.
 //
 // This is a ceiling, not a schedule: a context deadline shorter than it still
-// wins.
+// wins, and a context is what bounds a whole listing.
 func WithTimeout(timeout time.Duration) Option {
 	return func(o *options) { o.timeout = timeout }
 }
@@ -54,6 +56,9 @@ func WithTimeout(timeout time.Duration) Option {
 // the gateway asks, which inside a request handler is a decision the caller
 // should make rather than inherit. A queue of your own is usually the better
 // answer.
+//
+// It applies to Send alone. The gateway limits how fast a tenant sends, not
+// how often it reads, so ListProviders has no refusal of this kind to wait out.
 func WithRateLimitRetries(n int) Option {
 	return func(o *options) { o.rateLimitRetries = n }
 }

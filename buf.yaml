@@ -9,3 +9,14 @@ lint:
     # Style rules it does not follow are not this repo's to fix.
     - PACKAGE_VERSION_SUFFIX
     - FIELD_NOT_REQUIRED
+  ignore_only:
+    # TestEmailProviderConfig tests a provider before it is saved, so it takes
+    # the same request as creating one and answers like TestEmailProvider. That
+    # breaks all three rules, in one file the gateway owns; scoped to it so the
+    # rules still hold for every other copy.
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/panmail/v1/email_provider_service.proto
+    RPC_REQUEST_STANDARD_NAME:
+      - proto/panmail/v1/email_provider_service.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - proto/panmail/v1/email_provider_service.proto

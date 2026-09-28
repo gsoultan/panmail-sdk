@@ -59,7 +59,7 @@ The key carries the tenant, so there is nothing else to configure. Create one in
 
 | Field | Notes |
 | --- | --- |
-| `providerId` | **Required.** The gateway will not guess which provider a message goes out through — the wrong guess is a message sent from the wrong domain. |
+| `providerId` | **Required.** The gateway will not guess which provider a message goes out through — the wrong guess is a message sent from the wrong domain. The ids are on the Email Providers page, or [listed over the same door](#listing-providers). |
 | `from` | **Required.** Must be an address the provider is authorised to send as. |
 | `to` / `cc` / `bcc` | At least one address across the three. |
 | `bodyHtml` / `bodyText` | Send both when you can: the text part is what recipients with images off, screen readers and spam filters read. |
@@ -374,9 +374,117 @@ a refund will issue several.
 
 ---
 
+## Listing providers
+
+Every send names a provider. The ids are on the dashboard's Email Providers
+page, and the procedure that page reads them from takes an API key too.
+
+### The request
+
+```
+POST https://mail.example.com/panmail.v1.EmailProviderService/ListEmailProviders
+Content-Type: application/json
+X-API-Key: <your key>
+```
+
+The key needs the **`providers:read`** scope, which no key gets by default. One
+minted for sending holds `email:send` alone and is refused with
+`permission_denied`: `api key is missing the "providers:read" scope`.
+
+```json
+{ "pageSize": 50, "pageToken": "NTA=", "name": "prod", "type": "PROVIDER_TYPE_SMTP" }
+```
+
+| Field | Notes |
+| --- | --- |
+| `pageSize` | Zero or absent is 20. There is no maximum. |
+| `pageToken` | The previous page's `nextPageToken`; absent for the first page. Treat it as opaque. |
+| `name` | Keeps providers whose name **contains** it, ignoring case — a search, not a lookup. The gateway matches it with SQL `LIKE` and does not escape it, so `%` and `_` are wildcards. |
+| `type` | Keeps one `ProviderType`, by enum name. Absent is every type. |
+
+> **A misspelt `type` is not refused. It is ignored.** Connect decodes JSON with
+> unknown values discarded, and that includes an enum name it does not know:
+> `"type": "SMTP"` arrives as no filter at all, and the answer is every
+> provider. Spell the name in full, and check the types that come back — the
+> SDKs do the second for you.
+
+### The response
+
+`200 OK`:
+
+```json
+{
+  "providers": [
+    {
+      "id": "3f1c2b7a-0000-4000-8000-000000000001",
+      "name": "Production SES",
+      "type": "PROVIDER_TYPE_SES",
+      "allowedDomains": ["example.com"],
+      "sendRatePerMinute": 600,
+      "sendBurst": 100,
+      "createTime": "2026-09-01T10:00:00Z",
+      "updateTime": "2026-09-01T10:00:00Z",
+      "tenantId": "…",
+      "ses": { "region": "eu-west-1", "accessKey": "AKIA…" }
+    }
+  ],
+  "nextPageToken": "NTA="
+}
+```
+
+Newest first. `nextPageToken` is absent on the last page — and present on any
+full page, even when nothing follows it, so a list that is an exact multiple of
+`pageSize` ends with one empty page.
+
+`allowedDomains` are the From domains the provider will send as, each compared
+whole and ignoring case: `example.com` does not admit `mail.example.com`. Empty
+means the operator has not restricted it.
+
+`type` is an enum name, with one exception. A stored value the enum has no
+name for is written as a bare number — that is how protobuf JSON encodes one —
+and `provider_type.proto` reserves 2 to 5 because old rows may still carry them.
+A client that insists on a string fails the whole list on one such row.
+
+`PROVIDER_TYPE_IMAP` and `PROVIDER_TYPE_POP3` providers are listed too. They are
+mailboxes inbound mail is read from, and the gateway passes over them when it
+picks a provider to send through.
+
+**No credential is in it.** The gateway clears every password, API key, secret
+key, token and DKIM private key before answering, and never returns a webhook
+secret. What remains is configuration — host, username, region, the SES access
+key id, the OAuth client id — which a `providers:read` key can therefore read.
+The SDKs decode `id`, `name`, `type` and `allowedDomains` and nothing else: not
+because the rest is secret, but because a sender needs none of it.
+
+### Paging is by offset
+
+A page token is an offset, base64 encoded. A provider created while you page
+moves every row down by one, so the last provider of one page comes back first
+on the next. One deleted moves them up, and the provider that slides across the
+boundary is on neither page. Both need the list to span pages and to change
+while it is read.
+
+An unreadable token is not refused: the gateway starts again from the top.
+
+### What the SDKs add
+
+`ListProviders` in Go and `listProviders` in PHP return the whole list from one
+call, because providers are configuration rather than a feed:
+
+- Pages of 50, followed to the end, each provider returned once.
+- The types re-checked against the one asked for, so a filter the gateway
+  ignored still filters.
+- A page token seen twice, or more than 200 pages — 10,000 providers — is an
+  error rather than a list. A list cut short that looks complete is how a caller
+  concludes a provider does not exist.
+- No retries and no cache. Listing changes nothing, so calling again is always
+  safe, and how stale a list may be is the caller's to decide.
+
+---
+
 ## Generating your own client
 
-The three protos that make up `SendEmail`'s import closure are published in
-[`../proto`](../proto), copied verbatim from the gateway. You do not need them
-to use an SDK or to POST JSON — they are there for the case where you would
-rather generate a client than write one.
+The protos are published in [`../proto`](../proto), copied verbatim from the
+gateway: the import closures of `SendEmail` and `ListEmailProviders`, and the
+webhook vocabulary. You do not need them to use an SDK or to POST JSON — they
+are there for the case where you would rather generate a client than write one.
