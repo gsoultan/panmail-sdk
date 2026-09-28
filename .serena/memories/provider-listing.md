@@ -1,7 +1,8 @@
 # Provider listing — decisions and the gaps behind them
 
 `ListProviders` (Go) / `listProviders` (PHP) reached `main` on 2026-09-28 as
-`c82b8b7`, squash-merged from gsoultan/panmail-sdk#15.
+`c82b8b7`, squash-merged from gsoultan/panmail-sdk#15, and shipped the same day
+in `v0.1.0-rc.3`.
 
 ## Decisions, and why
 
@@ -36,5 +37,5 @@
 3. `LIKE` patterns are unescaped: provider name, event recipient and subject.
 4. `db.DecodeOffset` restarts silently on an unreadable token; a negative one is a
    500 (`internal`) on PostgreSQL.
-5. `internal/sdkcontract` has no listing test — blocked until an SDK tag carries
-   ListProviders.
+5. `internal/sdkcontract` has no listing test. No longer blocked: `v0.1.0-rc.3`
+   carries ListProviders, so the gateway's `go.mod` can move to it.
