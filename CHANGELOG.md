@@ -8,6 +8,18 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0-rc.3] — 2026-09-28
+
+The first call in these clients that is not a send. Listing the tenant's
+providers means the ids a send takes no longer have to be copied off the Email
+Providers page — for a key that also holds `providers:read`, which no key gets
+by default.
+
+Refusals are now read by the call that got them. Nothing changes for a send,
+and a listing can no longer be told it hit a full queue.
+
 ### Added
 
 - **Listing providers** — `Client.ListProviders` in Go and
