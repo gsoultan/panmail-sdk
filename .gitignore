@@ -11,3 +11,11 @@ php/composer.lock
 # Coverage artefacts
 coverage.out
 php/coverage.xml
+
+# graphify's build state rather than its graph: file mtimes, the absolute path
+# of whoever ran it, and a stamp that moves on every query. The graph, its
+# analysis and its report are committed; this would only churn, and be wrong
+# on any other machine.
+graphify-out/cache/
+graphify-out/manifest.json
+graphify-out/.graphify_root
