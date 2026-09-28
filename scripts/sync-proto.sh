@@ -9,6 +9,11 @@
 # expose WebhookTriggerEvent as constants. It is the vocabulary a receiver
 # matches on, so it is part of this SDK's contract whether or not anything here
 # generates code from it.
+#
+# The three provider files are ListEmailProviders' import closure. They are
+# copied whole, so they bring the rest of EmailProviderService with them —
+# create, update, delete — which the clients never call. Trimming them would
+# end the byte-for-byte match that makes drift checkable at all.
 set -euo pipefail
 
 gateway="${1:-}"
@@ -25,7 +30,8 @@ if [[ ! -d "$source_dir" ]]; then
     exit 1
 fi
 
-for file in common.proto event.proto email_service.proto webhook.proto; do
+for file in common.proto event.proto email_service.proto webhook.proto \
+    email_provider_service.proto email_provider.proto provider_type.proto; do
     cp "$source_dir/$file" "$target_dir/$file"
     echo "synced $file"
 done

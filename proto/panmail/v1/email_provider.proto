@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package panmail.v1;
+
+import "google/protobuf/timestamp.proto";
+import "panmail/v1/provider_type.proto";
+
+option go_package = "github.com/gsoultan/panmail/api/panmail/v1;panmailv1";
+
+message EmailProvider {
+  string id = 1;
+  string name = 2;
+  ProviderType type = 3;
+  oneof config {
+    SmtpConfig smtp = 4;
+    ImapConfig imap = 9;
+    Pop3Config pop3 = 10;
+    SendGridConfig sendgrid = 16;
+    SesConfig ses = 17;
+    PostmarkConfig postmark = 18;
+    MailgunConfig mailgun = 19;
+  }
+  google.protobuf.Timestamp create_time = 11;
+  google.protobuf.Timestamp update_time = 12;
+  string tenant_id = 13;
+  repeated string allowed_domains = 14;
+  // Verification material for this provider's delivery webhooks: SendGrid's
+  // base64 ECDSA public key, Mailgun's HTTP webhook signing key, or a shared
+  // secret for the generic HMAC format. Write-only; never returned.
+  string webhook_secret = 15;
+
+  // Ceiling on how fast this provider may be sent through, independent of the
+  // tenant's own. Zero is unlimited for both, and zero is the default.
+  //
+  // Unlike webhook_secret these are returned on read: an operator has to see a
+  // limit in order to change it, and a rate is configuration rather than a
+  // credential.
+  int32 send_rate_per_minute = 20;
+  // Deliveries allowed at once before the rate binds. Zero falls back to one
+  // minute's worth.
+  int32 send_burst = 21;
+}
+
+message SmtpConfig {
+  string host = 1;
+  int32 port = 2;
+  string username = 3;
+  string password = 4;
+  bool skip_verify = 5;
+  bool use_ssl = 6;
+
+  // DKIM signing. Unsigned mail is treated as suspicious by every major
+  // mailbox provider, and DMARC cannot pass on SPF alone once a message is
+  // forwarded, so this is the difference between the inbox and the spam folder.
+  //
+  // The private key lives in this message because the whole config blob is
+  // encrypted at rest with AES-256-GCM and redacted from every API response.
+  // Signing is off unless all three of domain, selector and private key are
+  // present.
+  DkimConfig dkim = 7;
+
+  // OAuth2 instead of a password. Gmail and Office 365 are retiring password
+  // authentication for SMTP, so a provider pointed at either will eventually
+  // need this. Absent means password authentication.
+  OAuth2Config oauth2 = 8;
+}
+
+message OAuth2Config {
+  // XOAUTH2 is what Gmail and Office 365 accept. OAUTHBEARER is the RFC 7628
+  // mechanism, offered by fewer servers.
+  string mechanism = 1;
+  string client_id = 2;
+  // Write-only, like every other stored credential.
+  string client_secret = 3;
+  // The long-lived grant exchanged for short-lived access tokens. Write-only.
+  string refresh_token = 4;
+  // Where to exchange it. Google uses https://oauth2.googleapis.com/token;
+  // Microsoft's is tenant-specific.
+  string token_endpoint = 5;
+  // Optional. Google ignores it on a refresh; some providers require it to
+  // narrow the resulting token.
+  string scope = 6;
+}
+
+message DkimConfig {
+  // The domain being signed for. Should match the From domain, or DMARC
+  // alignment fails even though the signature itself verifies.
+  string domain = 1;
+  // The selector, which names which key to fetch: the receiver looks up
+  // <selector>._domainkey.<domain>.
+  string selector = 2;
+  // PEM-encoded RSA or Ed25519 private key. Write-only: it is redacted on read
+  // like every other stored credential.
+  string private_key = 3;
+}
+
+message ImapConfig {
+  string host = 1;
+  int32 port = 2;
+  string username = 3;
+  string password = 4;
+  bool skip_verify = 5;
+  bool use_ssl = 6;
+}
+
+message Pop3Config {
+  string host = 1;
+  int32 port = 2;
+  string username = 3;
+  string password = 4;
+  bool skip_verify = 5;
+  bool use_ssl = 6;
+}
+
+// The API-based senders. Each carries only what its vendor needs; the whole
+// config blob is encrypted at rest, so the credentials inherit that protection.
+// Every secret field is redacted on read, like the SMTP password.
+
+message SendGridConfig {
+  string api_key = 1;
+  // Overrides the API host. For a regional endpoint or a test double; leave
+  // empty for api.sendgrid.com.
+  string base_url = 2;
+}
+
+message SesConfig {
+  string region = 1;
+  string access_key = 2;
+  string secret_key = 3;
+  // Optional endpoint override, for a VPC endpoint or a local test double.
+  string endpoint = 4;
+}
+
+message PostmarkConfig {
+  string server_token = 1;
+  // Postmark rejects bulk mail sent on a transactional stream, so a campaign
+  // needs this set to a broadcast stream. Empty uses the server default.
+  string message_stream = 2;
+  string base_url = 3;
+}
+
+message MailgunConfig {
+  string domain = 1;
+  string api_key = 2;
+  // Mailgun's EU region uses a different host, and sending to the wrong one
+  // fails authentication rather than falling back.
+  string base_url = 3;
+}

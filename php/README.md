@@ -36,6 +36,20 @@ A successful send means the gateway **wrote the message to its outbox**, not
 that it was delivered. Delivery is reported afterwards through events and
 webhooks, keyed by `$result->messageId`.
 
+**The provider ids can be listed** with a key that also holds the
+`providers:read` scope, which no key gets by default:
+
+```php
+use Panmail\ProviderType;
+
+foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
+    echo "{$provider->id} {$provider->name}", PHP_EOL;
+}
+```
+
+One call returns the whole list, following the gateway's pages for you. Each
+provider carries its id, name, type and allowed From domains, and nothing else.
+
 **Retries are off by default and never applied to an unknown outcome.** Pass
 `['rateLimitRetries' => n]` to wait out rate-limit refusals — the one failure
 where the gateway said plainly it did not accept the message.

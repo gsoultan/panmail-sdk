@@ -3,9 +3,9 @@
 Clients for sending mail through a [panmail](https://github.com/gsoultan/panmail)
 gateway, in Go and PHP.
 
-Both are the same small library in two languages: **one call**, typed
-refusals you can act on, and a deliberate refusal to retry anything whose
-outcome is unknown. None of them depends on the gateway's source — they speak
+Both are the same small library in two languages: **one call to send** and one
+to list what you can send through, typed refusals you can act on, and a
+deliberate refusal to retry anything whose outcome is unknown. None of them depends on the gateway's source — they speak
 [the wire contract](docs/WIRE.md), which is also what you want if you would
 rather POST JSON yourself or send over SMTP.
 
@@ -25,10 +25,10 @@ Create one in the dashboard under **Settings → API Keys**, with the
 `email:send` scope. The key carries the tenant, so there is nothing else to
 configure.
 
-You also need a **provider id**, from the Email Providers page. It is required
-on every send: panmail will not guess which of a tenant's providers a message
-goes out through, because the wrong guess is a message sent from the wrong
-domain.
+You also need a **provider id**, from the Email Providers page or
+[listed by the client](#listing-providers). It is required on every send:
+panmail will not guess which of a tenant's providers a message goes out
+through, because the wrong guess is a message sent from the wrong domain.
 
 ## Go
 
@@ -134,6 +134,43 @@ It is off by default because it makes `send` block for as long as the gateway
 asks, which inside a request handler is a decision you should make rather than
 inherit. A queue of your own is usually the better answer.
 
+## Listing providers
+
+The ids a send takes, for a key that also holds the **`providers:read`** scope
+— which no key gets by default:
+
+```go
+providers, err := client.ListProviders(ctx, panmail.ProviderFilter{Type: panmail.ProviderTypeSES})
+if err != nil {
+    return err
+}
+for _, p := range providers {
+    log.Println(p.ID, p.Name, p.AllowedDomains)
+}
+```
+
+```php
+use Panmail\ProviderType;
+
+foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
+    echo "{$provider->id} {$provider->name}", PHP_EOL;
+}
+```
+
+One call returns the whole list, newest first; the clients follow the
+gateway's pages for you. A provider carries its id, name, type and the From
+domains it will send as — nothing else, so it is safe to log. IMAP and POP3
+providers are listed too, but they read inbound mail rather than send it.
+
+The name filter is a search, not a lookup: `prod` matches `Production` and
+`eu-prod`. The type filter is checked against what comes back, because the
+gateway treats a type name it does not recognise as no filter at all.
+
+`providers:read` lets a key read every provider's configuration from the
+gateway, credentials excepted. If you only need the ids while setting an
+application up, a second key for that job keeps your sending key as narrow as
+it was.
+
 ## Not using an SDK
 
 You do not have to. [`docs/WIRE.md`](docs/WIRE.md) documents the HTTP JSON
@@ -191,8 +228,8 @@ header named. If you supply your own HTTP client, keep that property; see
 [`SECURITY.md`](SECURITY.md) for what each language needs.
 
 **A response is bounded at 1 MiB before it is read**, because a send result is
-a message id and a status, and a proxy error page is not worth buffering into
-an out-of-memory error.
+a message id and a status, a page of providers is tens of kilobytes, and a
+proxy error page is not worth buffering into an out-of-memory error.
 
 **The gateway must be reached over `https`.** `http://` is refused unless the
 host is loopback, so a gateway on `localhost` still works for development while

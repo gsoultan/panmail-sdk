@@ -24,7 +24,7 @@ type APIError struct {
 
 func (e *APIError) Error() string {
 	if e.Message == "" {
-		return fmt.Sprintf("panmail: the gateway refused the send: %s (http %d)", e.Code, e.Status)
+		return fmt.Sprintf("panmail: the gateway refused the request: %s (http %d)", e.Code, e.Status)
 	}
 	return fmt.Sprintf("panmail: %s: %s", e.Code, e.Message)
 }
@@ -88,8 +88,9 @@ func (e *SuppressedRecipientError) Error() string {
 
 func (e *SuppressedRecipientError) Unwrap() error { return e.err }
 
-// AuthError reports that the API key was missing, rejected, or lacks the
-// email:send scope.
+// AuthError reports that the API key was missing, rejected, or lacks the scope
+// the call needs: email:send to send, providers:read to list providers. The
+// gateway names the missing scope in the message.
 type AuthError struct {
 	err error
 }
@@ -116,7 +117,7 @@ const (
 	codeFailedPrecondition = "failed_precondition"
 )
 
-// classify turns a refusal into something a caller can act on.
+// classifySend turns a refusal of a send into something a caller can act on.
 //
 // The gateway answers both of its capacity refusals with resource_exhausted,
 // deliberately: they are the same answer to the client — you are asking for
@@ -125,22 +126,8 @@ const (
 // a delay worth quoting. That is the discrimination here, and it is why
 // removing Retry-After from the rate refusal would silently reclassify every
 // rate limit as a full queue.
-func classify(apiErr *APIError, header http.Header) error {
-	// Fall back to the HTTP status when the body carried no code, which is what
-	// a proxy returning its own error page looks like.
-	code := apiErr.Code
-	if code == "" {
-		switch apiErr.Status {
-		case http.StatusTooManyRequests:
-			code = codeResourceExhausted
-		case http.StatusUnauthorized:
-			code = codeUnauthenticated
-		case http.StatusForbidden:
-			code = codePermissionDenied
-		}
-	}
-
-	switch code {
+func classifySend(apiErr *APIError, header http.Header) error {
+	switch effectiveCode(apiErr) {
 	case codeResourceExhausted:
 		if retryAfter, ok := retryAfter(header); ok {
 			return &RateLimitedError{RetryAfter: retryAfter, err: apiErr}
@@ -148,10 +135,41 @@ func classify(apiErr *APIError, header http.Header) error {
 		return &BacklogFullError{err: apiErr}
 	case codeFailedPrecondition:
 		return &SuppressedRecipientError{err: apiErr}
+	default:
+		return classify(apiErr, header)
+	}
+}
+
+// classify is the part of classifySend that holds for every call: a key the
+// gateway would not take. Everything else keeps its code as an *APIError. The
+// other refusals with types of their own are answers to a send — a full
+// queue, a suppressed recipient — and would be lies read into the same code
+// from a listing.
+func classify(apiErr *APIError, _ http.Header) error {
+	switch effectiveCode(apiErr) {
 	case codeUnauthenticated, codePermissionDenied:
 		return &AuthError{err: apiErr}
 	default:
 		return apiErr
+	}
+}
+
+// effectiveCode is the Connect code, or the one the HTTP status implies when
+// the body carried none — which is what a proxy returning its own error page
+// looks like. APIError.Code itself is left as the gateway sent it.
+func effectiveCode(apiErr *APIError) string {
+	if apiErr.Code != "" {
+		return apiErr.Code
+	}
+	switch apiErr.Status {
+	case http.StatusTooManyRequests:
+		return codeResourceExhausted
+	case http.StatusUnauthorized:
+		return codeUnauthenticated
+	case http.StatusForbidden:
+		return codePermissionDenied
+	default:
+		return ""
 	}
 }
 

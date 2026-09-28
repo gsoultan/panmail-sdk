@@ -11,8 +11,9 @@ final class CurlTransport implements Transport
 {
     /**
      * Bounds what a single response may cost in memory. A send response is a
-     * message id and a status; anything approaching this is a proxy error
-     * page, not the gateway.
+     * message id and a status, and a page of providers is a few hundred bytes
+     * for each of the fifty a page holds; anything approaching this is a proxy
+     * error page, not the gateway.
      */
     private const MAX_RESPONSE_BYTES = 1 << 20;
 
@@ -85,10 +86,12 @@ final class CurlTransport implements Transport
             );
         }
         if ($ok === false) {
-            // Deliberately not classified and never retried: a transport error
-            // is the one outcome where the client does not know whether the
-            // gateway took the message.
-            throw new TransportException("panmail: the send did not complete: $error");
+            // Deliberately not classified and never retried: for a send, a
+            // transport error is the one outcome where the client does not
+            // know whether the gateway took the message. "The request" rather
+            // than "the send" because a listing comes through here too, and
+            // this does not know which it is carrying.
+            throw new TransportException("panmail: the request did not complete: $error");
         }
 
         return new Response($status, $responseHeaders, $payload);

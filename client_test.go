@@ -945,6 +945,13 @@ func TestAStatusWithoutACodeIsStillClassified(t *testing.T) {
 			var e *panmail.AuthError
 			return errors.As(err, &e)
 		},
+		// Any other status implies no code, and stays a plain *APIError
+		// carrying it rather than borrowing a type it has no claim to.
+		http.StatusBadGateway: func(err error) bool {
+			var e *panmail.APIError
+			return errors.As(err, &e) && e.Code == "" && e.Status == http.StatusBadGateway &&
+				err.Error() == e.Error()
+		},
 	}
 
 	for status, isRight := range cases {

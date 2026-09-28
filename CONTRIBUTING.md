@@ -55,7 +55,8 @@ send, the second names why a webhook fired — and conflating them is how a
 receiver ends up matching on a string the gateway never sends. Run that
 after `sync-proto.sh`; the constants themselves stay hand-written, because
 there is no code generator in this build and adding one to keep fifteen strings
-in step would be the wrong trade.
+in step would be the wrong trade. `testdata/provider-types.json` is
+`ProviderType`, generated the same way — the kind of provider a listing returns.
 
 `testdata/content-types.json` is the extension-to-content-type mapping, and
 every client reads it in its own test suite. It exists because the clients had
@@ -91,6 +92,9 @@ Two things follow from that. It guards the **published** SDK, not `main` — so 
 change here is unguarded until it is tagged and the gateway's `go.mod` moves.
 And it is **Go only**: PHP builds the same wire body by hand, and nothing
 compares it to the gateway. That is the gap that is actually left.
+
+It also only sends. Nothing there lists providers, so `ListProviders` is held to
+the gateway by this repo's tests and the synced protos alone until it does.
 
 ## The wire contract
 

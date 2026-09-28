@@ -38,6 +38,9 @@ use JsonException;
  * once it has been delivered: $result->messageId is what later delivery events
  * and webhooks are keyed by.
  *
+ * listProviders() returns the ids providerId takes, for a key that also holds
+ * the providers:read scope.
+ *
  * # Retries
  *
  * This client does not retry a send whose outcome it does not know. Sending is
@@ -64,14 +67,40 @@ final class Client
     private const SEND_PROCEDURE = '/panmail.v1.EmailService/SendEmail';
 
     /**
-     * Bounds a single send. Generous, because the gateway writes the message
-     * to its outbox before answering and that is a disk write on a possibly
-     * busy database — but finite, because a send that hangs holds whatever
-     * request is waiting on it.
+     * The Connect route for EmailProviderService.ListEmailProviders, the
+     * procedure the dashboard's Email Providers page reads from.
+     */
+    private const LIST_PROVIDERS_PROCEDURE = '/panmail.v1.EmailProviderService/ListEmailProviders';
+
+    /**
+     * How many providers each request asks for. listProviders() returns the
+     * whole list either way, so this decides only how many round trips that
+     * takes and how much of the transport's 1 MiB response bound each provider
+     * may use: about 20 KB apiece, which one exceeds only with an
+     * allowedDomains list running to around a thousand names.
+     */
+    private const PROVIDER_PAGE_SIZE = 50;
+
+    /**
+     * Bounds how long listProviders() follows the gateway's page tokens. It is
+     * there for a gateway, or something in front of one, that never stops
+     * handing them out: without it the loop is unbounded, and so is the memory
+     * holding what it has read. At PROVIDER_PAGE_SIZE a page that is 10,000
+     * providers, which is a platform rather than a tenant.
+     */
+    private const MAX_PROVIDER_PAGES = 200;
+
+    /**
+     * Bounds a single request: a send, or one page of a provider listing.
+     * Generous, because the gateway writes a message to its outbox before
+     * answering and that is a disk write on a possibly busy database — but
+     * finite, because a send that hangs holds whatever request is waiting on
+     * it.
      */
     public const DEFAULT_TIMEOUT = 30;
 
-    private readonly string $endpoint;
+    /** The gateway's origin with any trailing slash removed; each call appends its own procedure. */
+    private readonly string $baseUrl;
     private readonly int $timeout;
     private readonly int $rateLimitRetries;
 
@@ -88,9 +117,9 @@ final class Client
      *     rateLimitRetries?: int,
      *     headers?: array<string, string>,
      *     transport?: Transport
-     * } $options rateLimitRetries waits out up to n rate-limit refusals,
-     *            sleeping for the delay the gateway asks for each time. Off by
-     *            default, and only ever applied to a refusal.
+     * } $options rateLimitRetries waits out up to n rate-limit refusals of a
+     *            send, sleeping for the delay the gateway asks for each time.
+     *            Off by default, and only ever applied to a refusal.
      */
     public function __construct(string $baseUrl, string $apiKey, array $options = [])
     {
@@ -99,7 +128,7 @@ final class Client
             throw new InvalidMessageException('panmail: an api key is required');
         }
 
-        $this->endpoint = rtrim($baseUrl, '/') . self::SEND_PROCEDURE;
+        $this->baseUrl = rtrim($baseUrl, '/');
         $this->timeout = max(1, $options['timeout'] ?? self::DEFAULT_TIMEOUT);
         $this->rateLimitRetries = max(0, $options['rateLimitRetries'] ?? 0);
         $this->transport = $options['transport'] ?? new CurlTransport();
@@ -140,7 +169,7 @@ final class Client
      * @throws BacklogFullException    the queue is too deep; repeating makes it worse
      * @throws AuthException           the key was missing, rejected, or lacks email:send
      * @throws ApiException            any other refusal
-     * @throws TransportException      the send did not complete
+     * @throws TransportException      the request did not complete
      */
     public function send(Message $message): Result
     {
@@ -159,7 +188,12 @@ final class Client
 
         for ($attempt = 0; ; $attempt++) {
             try {
-                return $this->post($body);
+                $decoded = $this->post(self::SEND_PROCEDURE, $body, $this->classifySend(...), 'a send result');
+
+                return new Result(
+                    messageId: self::text($decoded['messageId'] ?? ''),
+                    status: self::text($decoded['status'] ?? ''),
+                );
             } catch (RateLimitedException $refusal) {
                 if ($attempt >= $this->rateLimitRetries || $refusal->retryAfter <= 0) {
                     throw $refusal;
@@ -169,12 +203,152 @@ final class Client
         }
     }
 
-    private function post(string $body): Result
+    /**
+     * Every provider in the key's tenant, newest first: the ids a Message's
+     * providerId takes, and the From domains each will send as.
+     *
+     * The key needs the providers:read scope, which no key has by default. One
+     * minted for sending holds email:send alone and is refused with an
+     * AuthException naming the scope. Granting it to a sending key lets that
+     * key read every provider's configuration from the gateway, credentials
+     * excepted; if provider ids are only needed while an application is set
+     * up, a second key for that job keeps the sending key as narrow as it was.
+     *
+     *     $ses = $client->listProviders(type: ProviderType::SES);
+     *
+     * It is one call because providers are configuration rather than a feed:
+     * the gateway is asked for pages and they are joined here. It pages by
+     * offset, so a provider created meanwhile can arrive twice — it is returned
+     * once — and one deleted meanwhile can push another across a page boundary
+     * and out of the list. Both need the list to span pages and to change while
+     * it is read.
+     *
+     * Nothing is retried, and rateLimitRetries does not apply: the gateway
+     * limits how fast a tenant sends, not how often it reads. Listing changes
+     * nothing, so any exception is safe to repeat by calling again.
+     *
+     * The timeout option bounds each page rather than the listing, so one that
+     * spans pages can take a multiple of it; the page limit is what bounds the
+     * whole.
+     *
+     * @param string $name keeps providers whose name contains it, ignoring
+     *                     case: "prod" matches "Production" and "eu-prod". A
+     *                     search, not a lookup — to find one provider by name,
+     *                     compare the names that come back. The gateway matches
+     *                     it with SQL LIKE and does not escape it, so % and _
+     *                     in it are wildcards.
+     * @param string $type keeps providers of one kind, a ProviderType constant.
+     *                     Empty, or ProviderType::UNSPECIFIED, is every kind.
+     *
+     * @return list<Provider>
+     *
+     * @throws InvalidMessageException the name could not be encoded as json
+     * @throws AuthException           the key was missing, rejected, or lacks providers:read
+     * @throws ApiException            any other refusal
+     * @throws TransportException      the request did not complete, or the gateway would not stop paging
+     */
+    public function listProviders(string $name = '', string $type = ''): array
     {
-        $response = $this->transport->send($this->endpoint, $this->headers, $body, $this->timeout);
+        if ($type === ProviderType::UNSPECIFIED) {
+            $type = '';
+        }
+
+        // An empty filter is left out rather than sent as "": the gateway
+        // decodes an enum name it does not know as no filter, and "" is one.
+        $request = ['pageSize' => self::PROVIDER_PAGE_SIZE];
+        if ($name !== '') {
+            $request['name'] = $name;
+        }
+        if ($type !== '') {
+            $request['type'] = $type;
+        }
+
+        $providers = [];
+        $seen = [];
+        $followed = [];
+
+        for ($page = 0; $page < self::MAX_PROVIDER_PAGES; $page++) {
+            try {
+                $body = json_encode($request, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            } catch (JsonException $e) {
+                // Invalid UTF-8 in the name. Left alone this escapes as a bare
+                // JsonException, which no catch written from the list above
+                // would stop.
+                throw new InvalidMessageException(
+                    'panmail: the name filter could not be encoded as json: ' . $e->getMessage(),
+                    0,
+                    $e
+                );
+            }
+
+            $decoded = $this->post(
+                self::LIST_PROVIDERS_PROCEDURE,
+                $body,
+                $this->classify(...),
+                'a page of providers'
+            );
+
+            $listed = $decoded['providers'] ?? [];
+            foreach (is_array($listed) ? $listed : [] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $provider = self::provider($item);
+
+                if (isset($seen[$provider->id])) {
+                    continue;
+                }
+                $seen[$provider->id] = true;
+
+                // Checked again here because the gateway ignores a type name
+                // it does not recognise rather than refusing it: a misspelt
+                // filter comes back as every provider, and has to be told
+                // apart from one that matched them all.
+                if ($type !== '' && $provider->type !== $type) {
+                    continue;
+                }
+
+                $providers[] = $provider;
+            }
+
+            $token = self::text($decoded['nextPageToken'] ?? '');
+            if ($token === '') {
+                return $providers;
+            }
+            if (isset($followed[$token])) {
+                // Escaped because the gateway wrote it and a log will read it:
+                // a newline in a token would otherwise start a line of its own.
+                $quoted = addcslashes($token, "\0..\37\"\\\177");
+                throw new TransportException(
+                    "panmail: the gateway handed out page token \"$quoted\" a second time; "
+                    . 'refusing to read the same pages again'
+                );
+            }
+            $followed[$token] = true;
+            $request['pageToken'] = $token;
+        }
+
+        throw new TransportException(
+            'panmail: the gateway was still paging after ' . self::MAX_PROVIDER_PAGES . ' pages of '
+            . self::PROVIDER_PAGE_SIZE . ' providers; narrow the list with a name or type filter'
+        );
+    }
+
+    /**
+     * One round trip to a procedure, returning the decoded body of a 200.
+     *
+     * @param callable(Response): ApiException $classify what this procedure's refusals mean
+     * @param string                           $expected what the body should have been, for the
+     *                                                   error when it is json but not an object
+     *
+     * @return array<mixed>
+     */
+    private function post(string $procedure, string $body, callable $classify, string $expected): array
+    {
+        $response = $this->transport->send($this->baseUrl . $procedure, $this->headers, $body, $this->timeout);
 
         if ($response->status !== 200) {
-            throw $this->classify($response);
+            throw $classify($response);
         }
 
         try {
@@ -189,13 +363,40 @@ final class Client
         }
         if (!is_array($decoded)) {
             throw new TransportException(
-                "panmail: the gateway's response was not a send result: " . trim($response->body)
+                "panmail: the gateway's response was not $expected: " . trim($response->body)
             );
         }
 
-        return new Result(
-            messageId: self::text($decoded['messageId'] ?? ''),
-            status: self::text($decoded['status'] ?? ''),
+        return $decoded;
+    }
+
+    /**
+     * The part of a listed provider a sender needs. The gateway also sends its
+     * configuration, timestamps, send ceilings and tenant id; none of that is
+     * read, so none of it is kept.
+     *
+     * @param array<mixed> $item
+     */
+    private static function provider(array $item): Provider
+    {
+        $domains = [];
+        $allowed = $item['allowedDomains'] ?? [];
+        foreach (is_array($allowed) ? $allowed : [] as $domain) {
+            $domains[] = self::text($domain);
+        }
+
+        // protobuf JSON leaves a zero value out, so no type is UNSPECIFIED. A
+        // value the enum has no name for arrives as a bare number instead —
+        // provider_type.proto reserves 2 to 5 because stored rows may still
+        // carry them — and text() keeps it as its decimal spelling rather than
+        // failing the list over one old row.
+        $type = self::text($item['type'] ?? '');
+
+        return new Provider(
+            id: self::text($item['id'] ?? ''),
+            name: self::text($item['name'] ?? ''),
+            type: $type === '' ? ProviderType::UNSPECIFIED : $type,
+            allowedDomains: $domains,
         );
     }
 
@@ -209,7 +410,7 @@ final class Client
     }
 
     /**
-     * Turns a refusal into something a caller can act on.
+     * Turns a refusal of a send into something a caller can act on.
      *
      * The gateway answers both of its capacity refusals with resource_exhausted,
      * deliberately: they are the same answer to the client — you are asking for
@@ -218,9 +419,62 @@ final class Client
      * has a delay worth quoting. That is the discrimination here, and it is why
      * removing Retry-After from the rate refusal would silently reclassify every
      * rate limit as a full queue.
-     *
+     */
+    private function classifySend(Response $response): ApiException
+    {
+        [$code, $message] = self::refusalOf($response);
+        $status = $response->status;
+
+        return match ($code) {
+            'resource_exhausted' => $this->capacityRefusal($message, $code, $status, $response),
+            // The gateway's answer to a suppressed recipient, and only to that
+            // on the send path. Before it had a code for this, a suppressed
+            // recipient arrived as "unknown" with a 500 and was
+            // indistinguishable from the gateway having broken.
+            'failed_precondition' => new SuppressedRecipientException(
+                "panmail: a recipient is suppressed, so the whole message was refused: $message",
+                $code,
+                $status
+            ),
+            default => self::classifyCode($code, $message, $status),
+        };
+    }
+
+    /**
+     * Turns a refusal of any other call into something a caller can act on.
      */
     private function classify(Response $response): ApiException
+    {
+        [$code, $message] = self::refusalOf($response);
+
+        return self::classifyCode($code, $message, $response->status);
+    }
+
+    /**
+     * The part of classifySend() that holds for every call: a key the gateway
+     * would not take. Everything else keeps its code as an ApiException. The
+     * other refusals with classes of their own are answers to a send — a full
+     * queue, a suppressed recipient — and would be lies read into the same code
+     * from a listing.
+     */
+    private static function classifyCode(string $code, string $message, int $status): ApiException
+    {
+        return match ($code) {
+            'unauthenticated', 'permission_denied' => new AuthException(
+                "panmail: the api key was not accepted: $message",
+                $code,
+                $status
+            ),
+            default => new ApiException("panmail: $code: $message", $code, $status),
+        };
+    }
+
+    /**
+     * The Connect code and message a refusal carries.
+     *
+     * @return array{string, string}
+     */
+    private static function refusalOf(Response $response): array
     {
         $payload = $response->body;
         $status = $response->status;
@@ -254,24 +508,7 @@ final class Client
             };
         }
 
-        return match ($code) {
-            'resource_exhausted' => $this->capacityRefusal($message, $code, $status, $response),
-            // The gateway's answer to a suppressed recipient, and only to that
-            // on the send path. Before it had a code for this, a suppressed
-            // recipient arrived as "unknown" with a 500 and was
-            // indistinguishable from the gateway having broken.
-            'failed_precondition' => new SuppressedRecipientException(
-                "panmail: a recipient is suppressed, so the whole message was refused: $message",
-                $code,
-                $status
-            ),
-            'unauthenticated', 'permission_denied' => new AuthException(
-                "panmail: the api key was not accepted: $message",
-                $code,
-                $status
-            ),
-            default => new ApiException("panmail: $code: $message", $code, $status),
-        };
+        return [$code, $message];
     }
 
     private function capacityRefusal(

@@ -20,7 +20,8 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-readonly FILES=(common.proto event.proto email_service.proto webhook.proto)
+readonly FILES=(common.proto event.proto email_service.proto webhook.proto
+    email_provider_service.proto email_provider.proto provider_type.proto)
 readonly RAW="https://raw.githubusercontent.com/gsoultan/panmail/main/api/panmail/v1"
 
 gateway="${1:-}"
@@ -48,7 +49,7 @@ fi
 
 drifted=()
 for file in "${FILES[@]}"; do
-    printf '  %-22s' "$file"
+    printf '  %-30s' "$file"
     if diff -q "$source_dir/$file" "proto/panmail/v1/$file" >/dev/null 2>&1; then
         printf 'identical\n'
     else

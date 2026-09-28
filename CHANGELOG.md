@@ -8,7 +8,52 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Listing providers** — `Client.ListProviders` in Go and
+  `Client::listProviders` in PHP, over the gateway's existing
+  `EmailProviderService.ListEmailProviders`. It returns the ids a send takes,
+  so an application no longer has to copy them off the Email Providers page.
+
+  The key needs `providers:read`, which no key has by default; a sending key is
+  refused with an `AuthError` / `AuthException` naming the scope.
+
+  One call returns the whole list. The clients follow the gateway's pages, 50 at
+  a time, and return each provider once — the gateway pages by offset, so one
+  created mid-read arrives twice. They stop with an error at 200 pages, or at
+  the first page token handed out twice, rather than return a list cut short
+  that looks complete.
+
+  A provider carries its id, name, type and allowed From domains, and nothing
+  else. The gateway also returns each provider's configuration with its
+  credentials cleared; none of it is needed to send, and not decoding it leaves
+  a lapse in that clearing nowhere here to land.
+
+  The type filter is checked against the answer. The gateway's Connect codec
+  discards an enum name it does not know, so a misspelt type comes back as every
+  provider; checked, it comes back as none.
+
+  `ProviderType`'s constants are held to `testdata/provider-types.json`,
+  generated from `provider_type.proto` like the other two fixtures. The
+  generator now matches digits, without which it would have skipped
+  `PROVIDER_TYPE_POP3` in silence.
+
+- The three protos behind that call join the verbatim copies in `proto/` and the
+  weekly drift check.
+
+### Changed
+
+- **A refusal is read by what it means on the call that got it.**
+  `failed_precondition` is a suppressed recipient on a send and a plain
+  `APIError` / `ApiException` anywhere else, and the same holds for the two
+  capacity refusals. Nothing changes for a send.
+- Go: a successful response over the 1 MiB bound is reported as that, as PHP
+  already did, rather than as JSON that would not parse. A refusal over the
+  bound is still classified by its status.
+- PHP: `CurlTransport` reports that "the request did not complete" rather than
+  "the send", because a listing goes through it too.
+- Go: an `APIError` with no message says the gateway refused "the request", not
+  "the send".
 
 ## [0.1.0-rc.2] — 2026-09-26
 

@@ -30,9 +30,29 @@ If you supply your own HTTP client, keep that property:
 | PHP | A custom `Transport` must not enable `CURLOPT_FOLLOWLOCATION`. |
 
 **A response is bounded before it is read.** Every client stops at 1 MiB. A send
-response is a message id and a status; anything approaching that size is a
-proxy's error page, and buffering it is how a misbehaving intermediary turns
-into an out-of-memory error in your process.
+response is a message id and a status, and a page of providers is tens of
+kilobytes; anything approaching that size is a proxy's error page, and buffering
+it is how a misbehaving intermediary turns into an out-of-memory error in your
+process.
+
+**A listing is bounded as well as each page of it.** Listing providers follows
+the gateway's page tokens, and a loop that trusts the other side to stop is
+unbounded — in time and in the memory holding what it has read. Both clients
+stop at 200 pages, and at the first token handed out twice, and report either
+as an error rather than returning the pages read so far.
+
+**A listing keeps only what a sender needs.** The gateway clears every
+credential from a provider before returning it, and what remains is
+configuration: host, username, region, the SES access key id. The clients keep
+a provider's id, name, type and allowed domains and nothing else, so a lapse in
+the gateway's clearing has nowhere in them to land, and a listed provider is
+safe to log.
+
+**Listing needs a scope a sending key does not have.** `providers:read` is not
+granted by default. It lets a key read that configuration from the gateway
+directly, whatever these clients keep, so if provider ids are only needed while
+an application is set up, a separate key for that job keeps the sending key as
+narrow as it was.
 
 **The gateway must be reached over https.** `http://` is refused unless the
 host is loopback — `localhost`, anything in `127.0.0.0/8`, or `::1` — because a
