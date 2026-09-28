@@ -22,6 +22,7 @@ on:
       - 'proto/**'
       - 'testdata/event-types.json'
       - 'testdata/webhook-events.json'
+      - 'testdata/provider-types.json'
       - 'scripts/sync-proto.sh'
       - 'scripts/sync-status.py'
       - 'scripts/check-proto-drift.sh'
