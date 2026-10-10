@@ -31,6 +31,14 @@ const sendProcedure = "/panmail.v1.EmailService/SendEmail"
 // proxy error page, not the gateway.
 const maxResponseBytes = 1 << 20
 
+// maxDrainBytes is how much of an unread remainder is discarded before the
+// body is closed. Enough for the tail of an ordinary response; far short of a
+// body that never ends.
+const maxDrainBytes = 64 << 10
+
+// maxErrorMessageBytes bounds the message an APIError carries.
+const maxErrorMessageBytes = 4 << 10
+
 // call is one Connect procedure and what its refusals mean.
 //
 // The same code can mean different things from different procedures:
@@ -152,7 +160,13 @@ func (c *Client) post(ctx context.Context, rpc call, body []byte, out any) error
 		return fmt.Errorf("panmail: %s did not complete: %w", rpc.what, err)
 	}
 	defer func() {
-		_, _ = io.Copy(io.Discard, res.Body)
+		// Drain a little so a short remainder still lets the connection be
+		// reused, but never the whole of it: past the read bound the body is
+		// a proxy page, an endless stream or a decompression bomb, and
+		// io.Copy would download all of it after the result was already
+		// decided. Closing an undrained body costs one connection, nothing
+		// more.
+		_, _ = io.CopyN(io.Discard, res.Body, maxDrainBytes)
 		_ = res.Body.Close()
 	}()
 
@@ -201,6 +215,11 @@ func decodeError(payload []byte, status int) *APIError {
 	}
 	if apiErr.Message == "" {
 		apiErr.Message = strings.TrimSpace(string(payload))
+	}
+	// A proxy's error page can be a megabyte. The status and code say what
+	// happened; the message is for a log line, and should fit in one.
+	if len(apiErr.Message) > maxErrorMessageBytes {
+		apiErr.Message = strings.ToValidUTF8(apiErr.Message[:maxErrorMessageBytes], "") + "…"
 	}
 	return apiErr
 }

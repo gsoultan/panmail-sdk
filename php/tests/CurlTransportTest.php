@@ -84,6 +84,39 @@ final class CurlTransportTest extends TestCase
     }
 
     /**
+     * A refusal is still a refusal when the page in front of it is long. As a
+     * TransportException it read as an unknown outcome, so a rate limit was
+     * never retried and the caller could not tell it was not accepted.
+     */
+    public function testAnOversizedRefusalKeepsItsStatus(): void
+    {
+        $response = (new CurlTransport())->send(self::$base . '/huge-refusal', [], '{}', 15);
+
+        self::assertSame(429, $response->status);
+        self::assertSame('2', $response->header('Retry-After'));
+        self::assertSame(1 << 20, strlen($response->body));
+    }
+
+    /**
+     * The handle is reused across requests; each must still get only its own
+     * body, with the previous request's callbacks gone.
+     */
+    public function testOneTransportServesRequestAfterRequest(): void
+    {
+        $transport = new CurlTransport();
+
+        $refused = $transport->send(self::$base . '/huge-refusal', [], '{}', 15);
+        $ok = $transport->send(self::$base . '/ok', [], '{}', 5);
+        $again = $transport->send(self::$base . '/ok', [], '{}', 5);
+
+        self::assertSame(429, $refused->status);
+        self::assertSame(200, $ok->status);
+        self::assertSame($ok->body, $again->body);
+        self::assertStringContainsString('msg_01', $again->body);
+        self::assertNull($again->header('Retry-After'));
+    }
+
+    /**
      * X-API-Key is a header cURL has never heard of, so nothing would drop it
      * on a redirect to another host. Following one is a key disclosure.
      */
