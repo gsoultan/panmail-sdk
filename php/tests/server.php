@@ -28,6 +28,18 @@ switch ($path) {
 
         return true;
 
+    case '/huge-refusal':
+        // A rate limit behind a proxy whose error page runs past the cap.
+        http_response_code(429);
+        header('Retry-After: 2');
+        header('Content-Type: text/html');
+        for ($i = 0; $i < 24; $i++) {
+            echo str_repeat('x', 64 * 1024);
+            flush();
+        }
+
+        return true;
+
     case '/redirect':
         header('Location: /followed?' . ($_SERVER['QUERY_STRING'] ?? ''), true, 307);
 

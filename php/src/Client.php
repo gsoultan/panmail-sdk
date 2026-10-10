@@ -99,6 +99,9 @@ final class Client
      */
     public const DEFAULT_TIMEOUT = 30;
 
+    /** Bounds the message a refusal carries; see refusalOf. */
+    private const MAX_ERROR_MESSAGE_BYTES = 4096;
+
     /** The gateway's origin with any trailing slash removed; each call appends its own procedure. */
     private readonly string $baseUrl;
     private readonly int $timeout;
@@ -492,6 +495,14 @@ final class Client
         }
         if ($message === '') {
             $message = trim($payload);
+        }
+        // A proxy's error page can be a megabyte. The status and code say what
+        // happened; the message is for a log line, and should fit in one.
+        if (strlen($message) > self::MAX_ERROR_MESSAGE_BYTES) {
+            // Without mbstring, which is not a requirement: drop the last
+            // multibyte sequence so the cut never leaves half a character.
+            $cut = substr($message, 0, self::MAX_ERROR_MESSAGE_BYTES);
+            $message = (string) preg_replace('/[\xC0-\xFF][\x80-\xBF]*$/', '', $cut) . '…';
         }
 
         // Fall back to the HTTP status when the body carried no code, which is
