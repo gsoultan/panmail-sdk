@@ -194,9 +194,8 @@ asked; with a key, and only when asked, they also repeat an unknown outcome.
 
 ### Idempotency keys
 
-> **Gateway support is newer than this SDK's copy of the protos.** The field is
-> `string idempotency_key = 14` on `SendEmailRequest`. It is not yet on the
-> gateway's `main`, so `proto/` — a verbatim copy of `main` — does not have it.
+The field is `string idempotency_key = 14` on `SendEmailRequest`, added by
+gsoultan/panmail#72. A gateway older than that ignores it.
 
 ```json
 { "providerId": "…", "from": "…", "to": ["…"], "bodyText": "…",

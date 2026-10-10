@@ -31,8 +31,8 @@ Both language packages take their version from the tag, so they are always relea
   supports keys: one that predates them ignores the field, and retrying there
   sends duplicates.
 
-  The gateway's side of this is not yet on its `main`, so `proto/` does not
-  have the field yet; `docs/WIRE.md` documents it.
+  The gateway added the field in gsoultan/panmail#72, and `proto/` now carries
+  it.
 
 - **A message's delivery events** — `Client.MessageEvents` in Go and
   `Client::messageEvents` in PHP, over the gateway's
