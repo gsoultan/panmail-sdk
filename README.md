@@ -229,7 +229,15 @@ header named. If you supply your own HTTP client, keep that property; see
 
 **A response is bounded at 1 MiB before it is read**, because a send result is
 a message id and a status, a page of providers is tens of kilobytes, and a
-proxy error page is not worth buffering into an out-of-memory error.
+proxy error page is not worth buffering into an out-of-memory error. Past that
+bound nothing more is read: the Go client discards at most another 64 KiB
+before closing, so a body that never ends cannot hold a call open. A refusal
+whose body was cut short is still classified from its status and code — a 429
+behind a long proxy page is still a rate limit, in both languages — and the
+message an error carries is cut to 4 KiB.
+
+The PHP client keeps one cURL handle per transport and resets it between
+requests, so consecutive sends and listing pages reuse the connection.
 
 **The gateway must be reached over `https`.** `http://` is refused unless the
 host is loopback, so a gateway on `localhost` still works for development while
@@ -246,6 +254,7 @@ go test -race ./...                  # Go
 cd php  && composer test             # PHP
 ```
 
+[`docs/PRD.md`](docs/PRD.md) is what the clients are required to do and why;
 [`CONTRIBUTING.md`](CONTRIBUTING.md) has the rest: what a change needs, how the
 protos are synced, and how a release is cut.
 
