@@ -58,6 +58,17 @@ there is no code generator in this build and adding one to keep fifteen strings
 in step would be the wrong trade. `testdata/provider-types.json` is
 `ProviderType`, generated the same way — the kind of provider a listing returns.
 
+`testdata/event-types.json` also maps each `EmailEventType` number to its
+name, because a webhook's delivery event carries the number. Both clients keep
+a table of their own for that, checked against it.
+
+`testdata/webhook-payloads.json` is one webhook body of each payload shape,
+byte for byte as the gateway built it. Those shapes are the gateway's Go struct
+tags, not its protos, so the drift check is blind to them; there is no script
+either, because the types are internal to the gateway and a generator has to
+run inside its module. When the gateway changes one of them, regenerate the
+body by hand and say at which commit in the fixture's comment.
+
 `testdata/content-types.json` is the extension-to-content-type mapping, and
 every client reads it in its own test suite. It exists because the clients had
 already drifted on it once. If you add an extension, add it there — not to a

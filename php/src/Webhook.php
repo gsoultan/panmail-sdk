@@ -131,6 +131,62 @@ final class Webhook
     }
 
     /**
+     * Verifies a delivery exactly as verify() does, then decodes its data into
+     * the class its event names.
+     *
+     *     $parsed = Webhook::parse($secret, getallheaders(), file_get_contents('php://input'));
+     *     if ($parsed->payload instanceof MailEvent) {
+     *         // $parsed->payload->type, ->recipient, ->reason
+     *     }
+     *
+     * An event this version has no class for is not refused. It comes back
+     * verified with a null payload and its data in $parsed->webhook->data,
+     * because the gateway adds events, and a receiver refusing a delivery it
+     * cannot read gets it retried until the gateway gives up.
+     *
+     * @param array<string, string|list<string>> $headers as any framework hands them over
+     *
+     * @throws WebhookException when the request is not known to have come from
+     *                          the gateway, or when a known event's data is
+     *                          not the shape this version reads — signed, so
+     *                          the gateway's format moving rather than an
+     *                          attack, but a payload decoded halfway would hand
+     *                          back zero values nobody can tell from real ones
+     */
+    public static function parse(
+        string $secret,
+        array $headers,
+        string $body,
+        int $tolerance = self::DEFAULT_TOLERANCE,
+    ): ParsedWebhook {
+        $webhook = self::verify($secret, $headers, $body, $tolerance);
+
+        try {
+            $payload = match ($webhook->event) {
+                TriggerEvent::MAIL_SENT,
+                TriggerEvent::MAIL_DELIVERED,
+                TriggerEvent::MAIL_OPENED,
+                TriggerEvent::MAIL_CLICKED,
+                TriggerEvent::MAIL_BOUNCED,
+                TriggerEvent::MAIL_REJECTED => WebhookData::mailEvent($webhook->data),
+                TriggerEvent::MAIL_HELD => WebhookData::mailHeld($webhook->data),
+                TriggerEvent::MAIL_RELEASED,
+                TriggerEvent::MAIL_QUARANTINE_REJECTED,
+                TriggerEvent::MAIL_EXPIRED => WebhookData::mailHoldOutcome($webhook->data),
+                TriggerEvent::MAIL_INBOUND => WebhookData::inboundMail($webhook->data),
+                default => null,
+            };
+        } catch (\UnexpectedValueException $e) {
+            throw new WebhookException(
+                "the delivery is signed, but its {$webhook->event} data is not what this version reads: "
+                . $e->getMessage()
+            );
+        }
+
+        return new ParsedWebhook($webhook, $payload);
+    }
+
+    /**
      * The gateway's scheme: the timestamp, a dot, then the body, under
      * HMAC-SHA256, hex encoded and prefixed with the algorithm.
      */

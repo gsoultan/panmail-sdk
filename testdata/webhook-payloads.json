@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "Webhook request bodies byte for byte as the gateway builds them, one per",
+    "payload shape. Each suite signs these and parses them, so the two clients",
+    "are held to the same bytes rather than to each one's idea of the shape.",
+    "",
+    "The gateway marshals the envelope with encoding/json, not protojson, and so",
+    "does each payload: field names are snake_case, a delivery event's type is",
+    "the EmailEventType NUMBER, and an inbound message's timestamp is",
+    "{\"seconds\", \"nanos\"} rather than a string. Those are the gateway's Go",
+    "struct tags (internal/event/repositories/entities.EmailEvent,",
+    "internal/emailfilter.HeldEvent and OutcomeEvent, panmailv1.InboundEmail), not",
+    "the protos, so scripts/check-proto-drift.sh cannot see them change.",
+    "",
+    "Produced by marshalling those types at gateway commit 407f95d (main) with",
+    "the envelope internal/webhook/worker.DurableWorker.Enqueue writes. There is no",
+    "script for it: the types are internal to the gateway, so a generator has to",
+    "run inside its module. Regenerate by hand when those types change."
+  ],
+  "bodies": {
+    "mail_bounced": "{\"data\":{\"id\":\"0193b2f1-0000-7000-8000-0000000000e1\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"provider_id\":\"3f1c2b7a-0000-4000-8000-000000000001\",\"provider_name\":\"Production SES\",\"message_id\":\"0193b2f1-0000-7000-8000-000000000001\",\"type\":6,\"recipient\":\"gone@example.org\",\"subject\":\"Your receipt\",\"timestamp\":\"2026-09-01T10:00:02.123456789Z\",\"metadata\":{\"attempt\":1,\"smtp_code\":\"550\"},\"error_message\":\"550 5.1.1 mailbox unknown\"},\"event\":\"WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"timestamp\":1788256805}",
+    "mail_opened": "{\"data\":{\"id\":\"0193b2f1-0000-7000-8000-0000000000e2\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"provider_id\":\"\",\"provider_name\":\"\",\"message_id\":\"0193b2f1-0000-7000-8000-000000000001\",\"type\":3,\"recipient\":\"user@example.net\",\"subject\":\"\",\"timestamp\":\"2026-09-01T10:00:02.123456789Z\",\"metadata\":null,\"error_message\":\"\"},\"event\":\"WEBHOOK_TRIGGER_EVENT_MAIL_OPENED\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"timestamp\":1788256805}",
+    "mail_held": "{\"data\":{\"id\":\"0193b2f1-0000-7000-8000-0000000000q1\",\"direction\":\"outbound\",\"message_id\":\"0193b2f1-0000-7000-8000-000000000001\",\"rule_id\":\"0193b2f1-0000-7000-8000-0000000000r1\",\"rule_name\":\"Invoices need a look\",\"from\":\"billing@example.com\",\"recipients\":[\"user@example.net\",\"cfo@example.net\"],\"subject\":\"Invoice 1042\",\"size_bytes\":48213,\"attachment_count\":1,\"attachment_names\":[\"invoice-1042.pdf\"],\"matched\":[{\"field\":\"subject\",\"operator\":\"contains\",\"values\":[\"invoice\"]},{\"field\":\"header\",\"operator\":\"equals\",\"values\":[\"1\"],\"header\":\"X-Priority\"},{\"field\":\"size\",\"operator\":\"greater_than\",\"number\":40000}],\"held_at\":\"2026-09-01T09:00:00Z\",\"expires_at\":\"2026-09-08T09:00:00Z\"},\"event\":\"WEBHOOK_TRIGGER_EVENT_MAIL_HELD\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"timestamp\":1788256805}",
+    "mail_released": "{\"data\":{\"id\":\"0193b2f1-0000-7000-8000-0000000000q1\",\"direction\":\"outbound\",\"message_id\":\"0193b2f1-0000-7000-8000-000000000001\",\"rule_id\":\"0193b2f1-0000-7000-8000-0000000000r1\",\"rule_name\":\"Invoices need a look\",\"from\":\"billing@example.com\",\"recipients\":[\"user@example.net\"],\"subject\":\"Invoice 1042\",\"held_at\":\"2026-09-01T09:00:00Z\",\"decided_at\":\"2026-09-01T10:00:02.123456789Z\",\"reviewed_by\":\"reviewer@example.com\",\"note\":\"expected invoice\"},\"event\":\"WEBHOOK_TRIGGER_EVENT_MAIL_RELEASED\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"timestamp\":1788256805}",
+    "mail_expired": "{\"data\":{\"id\":\"0193b2f1-0000-7000-8000-0000000000q2\",\"direction\":\"inbound\",\"rule_name\":\"Quarantine zips\",\"from\":\"someone@elsewhere.example\",\"recipients\":[\"support@example.com\"],\"subject\":\"files\",\"held_at\":\"2026-09-01T09:00:00Z\",\"decided_at\":\"2026-09-08T09:00:00Z\"},\"event\":\"WEBHOOK_TRIGGER_EVENT_MAIL_EXPIRED\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"timestamp\":1788256805}",
+    "mail_inbound": "{\"data\":{\"id\":\"0193b2f1-0000-7000-8000-0000000000i1\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"from\":\"Customer \\u003ccustomer@elsewhere.example\\u003e\",\"to\":[\"support@example.com\"],\"subject\":\"Help\",\"body_html\":\"\\u003cp\\u003eHello\\u003c/p\\u003e\",\"body_text\":\"Hello\",\"timestamp\":{\"seconds\":1788256802,\"nanos\":123456789},\"headers\":{\"Message-Id\":\"\\u003cabc@elsewhere.example\\u003e\"}},\"event\":\"WEBHOOK_TRIGGER_EVENT_MAIL_INBOUND\",\"tenant_id\":\"3f1c2b7a-0000-4000-8000-0000000000aa\",\"timestamp\":1788256805}"
+  }
+}

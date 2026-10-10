@@ -60,6 +60,7 @@ in step across two languages.
 | --- | --- |
 | W1 | Signature verification in constant time over exactly the bytes the gateway signs. |
 | W2 | Timestamp tolerance checked in both directions, overflow-safe. |
+| W3 | `ParseWebhook` / `Webhook::parse` verify, then decode the data into the type its event names, held to the bytes in `testdata/webhook-payloads.json`. An unknown event is returned verified with no payload, never refused; a known event in a shape the client cannot read is refused rather than half decoded. |
 
 ## Non-functional
 

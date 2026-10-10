@@ -14,8 +14,9 @@ final class WebhookEvent
      *                           endpoint can serve several
      * @param int    $timestamp  unix seconds, when the gateway sent it
      * @param string $deliveryId stable across retries — store it and ignore a repeat
-     * @param mixed  $data       the event-specific payload, left undecoded beyond
-     *                           JSON because its shape depends on $event
+     * @param mixed  $data       the event-specific payload, decoded from JSON and
+     *                           no further; Webhook::parse() types it by $event,
+     *                           and an event it has no class for is only here
      */
     public function __construct(
         public readonly string $event,

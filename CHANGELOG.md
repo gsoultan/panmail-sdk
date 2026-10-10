@@ -62,8 +62,27 @@ Both language packages take their version from the tag, so they are always relea
   the list succeeds, so it is safe to repeat. `suppression_service.proto` and
   `suppression.proto` join `proto/` and the drift check.
 
+- **Typed webhook payloads** — `ParseWebhook` in Go and `Webhook::parse` in
+  PHP verify a delivery exactly as before, then decode its data by event into
+  `MailEvent` (sent, delivered, opened, clicked, bounced, rejected),
+  `MailHeld`, `MailHoldOutcome` (released, quarantine-rejected, expired) or
+  `InboundMail`. The shapes are the gateway's Go struct tags, since it
+  marshals webhooks with `encoding/json`: snake_case, a delivery event's type
+  as an `EmailEventType` number — turned back into its `Status` name — and an
+  inbound timestamp as `{seconds, nanos}`. Both suites parse the same gateway
+  bytes from the new `testdata/webhook-payloads.json`, and
+  `testdata/event-types.json` gains the enum's numbers.
+
+  An event the client has no type for is returned verified with no payload,
+  not refused, so a newer gateway's deliveries are not bounced into retries. A
+  known event whose data is the wrong shape is refused rather than half
+  decoded.
+
 ### Fixed
 
+- **The webhook payload was documented wrong.** `docs/WIRE.md` showed `data`
+  as `{"messageId", "reason"}`; it is the gateway's delivery event in
+  snake_case, with the event type as a number. It now documents every payload.
 - **Go: a refusal no longer waits for the rest of a long body.** After reading
   the first MiB of a response, the client drained everything that followed
   before returning, so a proxy's endless error page or a decompression bomb

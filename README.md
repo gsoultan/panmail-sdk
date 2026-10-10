@@ -311,6 +311,38 @@ case panmail.TriggerEventMailExpired:
 
 `event.deliveryId` is stable across retries, and the gateway does retry: store
 it and ignore a repeat, or a bounce will suppress an address more than once.
+
+To have the data decoded as well, parse instead of verifying — same checks,
+then a typed payload chosen by the event:
+
+```go
+parsed, err := panmail.ParseWebhook(secret, r.Header, body)
+if err != nil {
+    http.Error(w, "", http.StatusUnauthorized)
+    return
+}
+switch p := parsed.Payload.(type) {
+case *panmail.MailEvent:       // sent, delivered, opened, clicked, bounced, rejected
+    log.Println(p.Type, p.Recipient, p.Reason)
+case *panmail.MailHeld:        // p.ReviewID, p.Matched, p.ExpiresAt
+case *panmail.MailHoldOutcome: // released, quarantine-rejected, expired
+case *panmail.InboundMail:     // p.From, p.Subject, p.Text
+case nil:                      // an event this version does not know: parsed.Webhook.Data
+}
+```
+
+```php
+$parsed = Panmail\Webhook::parse($secret, getallheaders(), file_get_contents('php://input'));
+if ($parsed->payload instanceof Panmail\MailEvent) {
+    echo "{$parsed->payload->recipient} {$parsed->payload->type}", PHP_EOL;
+}
+```
+
+An event the client has no type for comes back verified with no payload rather
+than being refused, so a gateway newer than your client does not have its
+deliveries bounced and retried. A known event whose data is not the shape the
+client reads is refused, like a bad signature. `MailEvent.Type` is the precise
+`Status` — `MAIL_BOUNCED` fires for hard and soft bounces alike.
 The full contract is in [`docs/WIRE.md`](docs/WIRE.md).
 
 ## Your API key

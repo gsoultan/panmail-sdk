@@ -68,6 +68,10 @@ if ($client->checkSuppression('bounced@example.net')->suppressed) {
 }
 ```
 
+**Webhooks are verified and decoded** with `Webhook::parse()`, which returns
+the envelope and a typed payload — `MailEvent`, `MailHeld`, `MailHoldOutcome`
+or `InboundMail` — or no payload for an event this version does not know.
+
 **Retries are off by default, and an unknown outcome is never repeated without
 an idempotency key.** Pass `['rateLimitRetries' => n]` to wait out rate-limit
 refusals — where the gateway said plainly it did not accept the message. Give

@@ -576,30 +576,19 @@ final class Client
         );
     }
 
-    /**
-     * A protobuf JSON Timestamp: RFC 3339, with up to nine fractional digits.
-     * Checked against that shape first, because DateTimeImmutable reads
-     * "yesterday" too, and a history whose times are guesses is worse than an
-     * error.
-     */
+    /** A protobuf JSON Timestamp; see Rfc3339. */
     private static function timestamp(mixed $value): ?\DateTimeImmutable
     {
         if ($value === null) {
             return null;
         }
         $text = self::text($value);
-        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/', $text) !== 1) {
+        $parsed = Rfc3339::parse($text);
+        if ($parsed === null) {
             throw new TransportException("panmail: the gateway sent a timestamp that is not one: \"$text\"");
         }
-        try {
-            return new \DateTimeImmutable($text);
-        } catch (\Exception $e) {
-            throw new TransportException(
-                "panmail: the gateway sent a timestamp that is not one: \"$text\"",
-                0,
-                $e
-            );
-        }
+
+        return $parsed;
     }
 
     /**

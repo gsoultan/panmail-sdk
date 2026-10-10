@@ -78,8 +78,8 @@ type WebhookEvent struct {
 	// DeliveryID is stable across retries. Store it and ignore a repeat.
 	DeliveryID string
 
-	// Data is the event-specific payload, left as raw JSON because its shape
-	// depends on Event and this package does not model every one of them.
+	// Data is the event-specific payload as it arrived. ParseWebhook decodes
+	// it by Event; an event this version has no type for is only here.
 	Data json.RawMessage
 }
 

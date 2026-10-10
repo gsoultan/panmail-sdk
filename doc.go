@@ -46,6 +46,13 @@
 // tenant's suppression list, for a key holding suppressions:read and
 // suppressions:write respectively.
 //
+// # Webhooks
+//
+// VerifyWebhook checks a delivery came from the gateway; ParseWebhook does the
+// same and decodes its data into a MailEvent, MailHeld, MailHoldOutcome or
+// InboundMail, leaving the payload nil for an event this version does not
+// know.
+//
 // # Retries
 //
 // This client does not retry a send whose outcome it does not know unless the

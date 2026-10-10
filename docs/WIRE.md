@@ -344,9 +344,48 @@ The body is an envelope with the event-specific payload inside it:
   "event": "WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED",
   "tenant_id": "3f1c2b7a-0000-4000-8000-000000000001",
   "timestamp": 1700000000,
-  "data": { "messageId": "0193b2f1-...", "reason": "mailbox full" }
+  "data": {
+    "id": "0193b2f1-…",
+    "tenant_id": "3f1c2b7a-…",
+    "provider_id": "3f1c2b7a-…",
+    "provider_name": "Production SES",
+    "message_id": "0193b2f1-…",
+    "type": 6,
+    "recipient": "gone@example.org",
+    "subject": "Your receipt",
+    "timestamp": "2026-09-01T10:00:02.123456789Z",
+    "metadata": { "smtp_code": "550" },
+    "error_message": "550 5.1.1 mailbox unknown"
+  }
 }
 ```
+
+### The payloads
+
+The gateway builds the envelope and its `data` with Go's `encoding/json`, not
+protobuf JSON, so the payloads follow the gateway's **Go struct tags** rather
+than the protos: field names are `snake_case`, a delivery event's `type` is
+the `EmailEventType` **number** (`6` is `HARD_BOUNCE`), and an inbound
+message's timestamp is `{"seconds": …, "nanos": …}`. None of this is in a
+proto, so the drift check cannot see it change.
+[`testdata/webhook-payloads.json`](../testdata/webhook-payloads.json) holds
+one body of each shape, byte for byte as the gateway built it.
+
+| Events | `data` | Fields |
+| --- | --- | --- |
+| `MAIL_SENT`, `MAIL_DELIVERED`, `MAIL_OPENED`, `MAIL_CLICKED`, `MAIL_BOUNCED`, `MAIL_REJECTED` | a delivery event | `id`, `tenant_id`, `provider_id`, `provider_name`, `message_id`, `type` (number), `recipient`, `subject`, `timestamp` (RFC 3339), `metadata` (object or `null`), `error_message` |
+| `MAIL_HELD` | a hold | `id` (the review-queue id), `direction` (`outbound`/`inbound`), `message_id`¹, `rule_id`¹, `rule_name`, `from`, `recipients`, `subject`, `size_bytes`, `attachment_count`, `attachment_names`¹, `matched` (`field`, `operator`, `values`¹, `header`¹, `number`¹), `held_at`, `expires_at`¹ |
+| `MAIL_RELEASED`, `MAIL_QUARANTINE_REJECTED`, `MAIL_EXPIRED` | how a hold ended | `id`, `direction`, `message_id`¹, `rule_id`¹, `rule_name`, `from`, `recipients`, `subject`, `held_at`, `decided_at`, `reviewed_by`¹, `note`¹ — no reviewer on an expiry |
+| `MAIL_INBOUND` | an inbound message | `id`¹, `tenant_id`¹, `from`¹, `to`¹, `subject`¹, `body_html`¹, `body_text`¹, `timestamp` (`{seconds, nanos}`)¹, `headers`¹ |
+
+¹ Left out when empty.
+
+The trigger is coarser than the event: `MAIL_BOUNCED` fires for `BOUNCED`,
+`HARD_BOUNCE` and `SOFT_BOUNCE`, and `MAIL_REJECTED` for `REJECTED` and
+`DROPPED`. Read `type` for which.
+
+A hold and its outcome carry no body and no attachment content. An inbound
+message carries both bodies.
 
 ### The event vocabulary
 
@@ -421,6 +460,31 @@ $event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('ph
 
 [`testdata/webhook-signatures.json`](../testdata/webhook-signatures.json) holds
 known-good vectors if you are implementing this yourself.
+
+### Typed payloads
+
+`ParseWebhook` in Go and `Webhook::parse` in PHP verify exactly as above, then
+decode `data` by the event: `MailEvent`, `MailHeld`, `MailHoldOutcome` or
+`InboundMail`. A delivery event's `type` number comes back as its `Status`
+name, and an inbound timestamp is read in either form.
+
+- **An event they have no type for is not refused.** It comes back verified,
+  with no payload and the raw data alongside. The gateway adds events, and a
+  receiver that refuses one gets it retried until the gateway gives up.
+- **A known event whose data is the wrong shape is refused** with the webhook
+  error, naming the event. It was signed, so it is the format moving, not an
+  attack — but a payload decoded halfway hands back zero values nobody can
+  tell from real ones. A field may be absent or `null`; one that is present
+  must be the type the gateway writes.
+
+```go
+parsed, err := panmail.ParseWebhook(secret, r.Header, body)
+if bounce, ok := parsed.Payload.(*panmail.MailEvent); ok && bounce.Type == panmail.StatusHardBounce { … }
+```
+```php
+$parsed = Panmail\Webhook::parse($secret, getallheaders(), file_get_contents('php://input'));
+if ($parsed->payload instanceof Panmail\MailEvent && $parsed->payload->type === Panmail\Status::HARD_BOUNCE) { … }
+```
 
 ### Retries, and why you need the delivery id
 
