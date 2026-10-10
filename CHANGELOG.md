@@ -8,6 +8,17 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] — 2026-10-10
+
+The first stable release. Beyond sending and listing providers, the clients now
+read a message's delivery events, check and lift suppressions, and parse
+verified webhooks into typed events. With an idempotency key, a send whose
+outcome is unknown can finally be retried safely; it needs gateway v2.0.0.
+Responses are bounded, so a proxy's endless error page can no longer hold a
+call open.
+
 ### Added
 
 - **Idempotency keys** — `Message.IdempotencyKey` in Go, the `idempotencyKey`
