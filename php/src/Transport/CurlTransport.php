@@ -27,6 +27,10 @@ final class CurlTransport implements Transport
 
     public function send(string $url, array $headers, string $body, int $timeout): Response
     {
+        if ($url === '') {
+            throw new TransportException('panmail: no URL to send to');
+        }
+
         $headerLines = [];
         foreach ($headers as $name => $value) {
             $headerLines[] = "$name: $value";
