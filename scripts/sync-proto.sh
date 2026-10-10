@@ -17,6 +17,8 @@
 #
 # event_service.proto is ListEvents, which MessageEvents calls. The rest of
 # EventService — metrics, archives — comes with it for the same reason.
+# suppression_service.proto and suppression.proto are CheckSuppression and
+# RemoveSuppression's closure, with add, import and list alongside.
 set -euo pipefail
 
 gateway="${1:-}"
@@ -35,7 +37,7 @@ fi
 
 for file in common.proto event.proto email_service.proto webhook.proto \
     email_provider_service.proto email_provider.proto provider_type.proto \
-    event_service.proto; do
+    event_service.proto suppression_service.proto suppression.proto; do
     cp "$source_dir/$file" "$target_dir/$file"
     echo "synced $file"
 done

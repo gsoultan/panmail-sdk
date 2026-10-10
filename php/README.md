@@ -59,6 +59,15 @@ foreach ($client->messageEvents($result->messageId) as $event) {
 }
 ```
 
+**A suppression can be looked up and lifted** — `checkSuppression()` with
+`suppressions:read`, `removeSuppression()` with `suppressions:write`:
+
+```php
+if ($client->checkSuppression('bounced@example.net')->suppressed) {
+    $client->removeSuppression('bounced@example.net');
+}
+```
+
 **Retries are off by default, and an unknown outcome is never repeated without
 an idempotency key.** Pass `['rateLimitRetries' => n]` to wait out rate-limit
 refusals — where the gateway said plainly it did not accept the message. Give

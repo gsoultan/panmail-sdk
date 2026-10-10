@@ -240,6 +240,35 @@ provider's free-form metadata.
 included. A second key for the job that needs it keeps your sending key as
 narrow as it was.
 
+## Suppressions
+
+A send to an address on the tenant's suppression list is refused whole, with
+`SuppressedRecipientError` / `SuppressedRecipientException`. Look one up with a
+key that holds **`suppressions:read`**, and lift it with one that holds
+**`suppressions:write`** — neither is granted by default:
+
+```go
+check, err := client.CheckSuppression(ctx, "bounced@example.net")
+if err == nil && check.Suppressed {
+    log.Println("suppressed:", check.Reason)
+    // err = client.RemoveSuppression(ctx, "bounced@example.net")
+}
+```
+
+```php
+$check = $client->checkSuppression('bounced@example.net');
+if ($check->suppressed) {
+    echo "suppressed: {$check->reason}", PHP_EOL;
+    // $client->removeSuppression('bounced@example.net');
+}
+```
+
+The gateway compares mailboxes, not strings, so `Alice <Alice@Example.COM>`
+finds `alice@example.com`. Removing an address that is not on the list
+succeeds, so a removal is safe to repeat. The address was usually suppressed by
+a hard bounce or a complaint: mailing it again before that has changed is how
+a sending reputation is spent.
+
 ## Not using an SDK
 
 You do not have to. [`docs/WIRE.md`](docs/WIRE.md) documents the HTTP JSON

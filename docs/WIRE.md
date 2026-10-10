@@ -133,7 +133,7 @@ cannot move. Only `unknown` means the gateway might succeed if asked again.
 | --- | --- | --- |
 | `invalid_argument` | refusal | Fix the request — the provider or template does not exist, or the template will not render against the data sent. Retrying never helps. |
 | `unauthenticated`, `permission_denied` | refusal | Fix the key or its scopes. |
-| `failed_precondition` | refusal | A recipient is suppressed. The **whole** message is refused, not just that recipient's copy. Remove the address from the send, or lift the suppression. |
+| `failed_precondition` | refusal | A recipient is suppressed. The **whole** message is refused, not just that recipient's copy. Remove the address from the send, or lift the suppression — see [Suppressions](#suppressions). |
 | `resource_exhausted` | refusal | You are asking for more than you may have. The only one with a schedule attached, and only sometimes — see below. |
 | `already_exists` | refusal | The key names a different message. Nothing was sent; choose keys that name what is being sent. |
 | `aborted` | unknown outcome | Only for a keyed send racing another with the same key. Asking again with the same key returns the first message. |
@@ -622,9 +622,52 @@ history from one call:
 
 ---
 
+## Suppressions
+
+The list that turns a send into `failed_precondition`. Two procedures on it
+are worth a sender's while: is this address on it, and take it off.
+
+```
+POST https://mail.example.com/panmail.v1.SuppressionService/CheckSuppression
+POST https://mail.example.com/panmail.v1.SuppressionService/RemoveSuppression
+Content-Type: application/json
+X-API-Key: <your key>
+```
+
+Both take the address and nothing else:
+
+```json
+{ "email": "Bounced <bounced@example.net>" }
+```
+
+| Procedure | Scope | Answer |
+| --- | --- | --- |
+| `CheckSuppression` | **`suppressions:read`** | `{ "isSuppressed": true, "reason": "hard bounce" }`, or `{}` for an address not on the list — protobuf JSON leaves `false` and `""` out. |
+| `RemoveSuppression` | **`suppressions:write`** | `{}`. Removing an address that is not on the list succeeds too, so a removal is safe to repeat. |
+
+No key has either scope by default. `suppressions:write` also lets a key add
+and import suppressions.
+
+The gateway compares **mailboxes, not strings**: it reduces an address to its
+bare lowercased form before it looks, so `Alice <Alice@Example.COM>` and
+`alice@example.com` are one entry. An empty address is answered "not
+suppressed" by the check and refused with `invalid_argument` by the removal;
+the SDKs refuse it before sending.
+
+A removal is not undone by anything but the next bounce or complaint, and the
+address was usually put there by one. Mailing it again without that reason
+having gone away is how a sending reputation is spent: check the reason first.
+
+The SDKs: `CheckSuppression` / `checkSuppression` and `RemoveSuppression` /
+`removeSuppression`. Neither retries. A `failed_precondition` here is a plain
+refusal, not a suppressed recipient.
+
+---
+
 ## Generating your own client
 
 The protos are published in [`../proto`](../proto), copied verbatim from the
-gateway: the import closures of `SendEmail`, `ListEmailProviders` and
-`ListEvents`, and the webhook vocabulary. You do not need them to use an SDK or to POST JSON — they
+gateway: the import closures of `SendEmail`, `ListEmailProviders`,
+`ListEvents`, `CheckSuppression` and `RemoveSuppression`, and the webhook
+vocabulary. You do not need them to use an SDK or to POST JSON — they
 are there for the case where you would rather generate a client than write one.

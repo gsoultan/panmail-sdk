@@ -113,6 +113,13 @@ final class Client
     private const MAX_EVENT_PAGES = 50;
 
     /**
+     * The two SuppressionService procedures this client calls. The service
+     * also adds, imports and lists; a sender needs none of it.
+     */
+    private const CHECK_SUPPRESSION_PROCEDURE = '/panmail.v1.SuppressionService/CheckSuppression';
+    private const REMOVE_SUPPRESSION_PROCEDURE = '/panmail.v1.SuppressionService/RemoveSuppression';
+
+    /**
      * Bounds a single request: a send, or one page of a provider listing.
      * Generous, because the gateway writes a message to its outbox before
      * answering and that is a disk write on a possibly busy database — but
@@ -468,6 +475,82 @@ final class Client
             'panmail: the gateway was still paging after ' . self::MAX_EVENT_PAGES . ' pages of '
             . self::EVENT_PAGE_SIZE . ' events for one message'
         );
+    }
+
+    /**
+     * Whether $address is on the tenant's suppression list, the list that
+     * turns a send to it into a SuppressedRecipientException.
+     *
+     * The gateway compares addresses as mailboxes, not strings: "Alice
+     * <Alice@Example.COM>" and "alice@example.com" are the same entry.
+     *
+     * The key needs the suppressions:read scope, which no key has by default.
+     * Nothing is retried, and checking changes nothing, so any exception is
+     * safe to repeat.
+     *
+     * @throws InvalidMessageException no address, or one that cannot be encoded as json
+     * @throws AuthException           the key was missing, rejected, or lacks suppressions:read
+     * @throws ApiException            any other refusal
+     * @throws TransportException      the request did not complete
+     */
+    public function checkSuppression(string $address): SuppressionCheck
+    {
+        $decoded = $this->post(
+            self::CHECK_SUPPRESSION_PROCEDURE,
+            self::suppressionBody($address),
+            $this->classify(...),
+            'a suppression check'
+        );
+
+        // protobuf JSON leaves false and "" out, so an address not on the
+        // list is an empty object.
+        return new SuppressionCheck(
+            suppressed: ($decoded['isSuppressed'] ?? false) === true,
+            reason: self::text($decoded['reason'] ?? ''),
+        );
+    }
+
+    /**
+     * Takes $address off the tenant's suppression list, so that sends to it
+     * are accepted again.
+     *
+     * Removing an address that is not on the list succeeds, so a removal is
+     * safe to repeat; that is also why nothing is retried here.
+     *
+     * The address was usually put there for a reason: a hard bounce or a
+     * complaint. Mailing it again without that reason having gone away is how
+     * a sending reputation is spent. Check the reason first.
+     *
+     * The key needs the suppressions:write scope, which no key has by default
+     * and which also lets the key add and import suppressions.
+     *
+     * @throws InvalidMessageException no address, or one that cannot be encoded as json
+     * @throws AuthException           the key was missing, rejected, or lacks suppressions:write
+     * @throws ApiException            any other refusal
+     * @throws TransportException      the request did not complete
+     */
+    public function removeSuppression(string $address): void
+    {
+        $this->post(
+            self::REMOVE_SUPPRESSION_PROCEDURE,
+            self::suppressionBody($address),
+            $this->classify(...),
+            'a removal result'
+        );
+    }
+
+    /**
+     * The gateway answers a check of no address with "not suppressed", which
+     * is true and useless, and refuses a removal of one. Neither is worth a
+     * round trip.
+     */
+    private static function suppressionBody(string $address): string
+    {
+        if ($address === '') {
+            throw new InvalidMessageException('panmail: an email address is required');
+        }
+
+        return self::encodeRequest(['email' => $address], 'the address');
     }
 
     /**

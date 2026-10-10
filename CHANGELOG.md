@@ -53,6 +53,15 @@ Both language packages take their version from the tag, so they are always relea
   `event_service.proto` joins the verbatim copies in `proto/` and the drift
   check.
 
+- **Suppressions** — `CheckSuppression` / `checkSuppression` reports whether an
+  address is on the tenant's suppression list and why, for a key with
+  `suppressions:read`; `RemoveSuppression` / `removeSuppression` lifts it, for
+  a key with `suppressions:write`. Neither scope is granted by default. The
+  gateway compares mailboxes rather than strings. An empty address is refused
+  before it is sent; nothing is retried, and a removal of an address not on
+  the list succeeds, so it is safe to repeat. `suppression_service.proto` and
+  `suppression.proto` join `proto/` and the drift check.
+
 ### Fixed
 
 - **Go: a refusal no longer waits for the rest of a long body.** After reading

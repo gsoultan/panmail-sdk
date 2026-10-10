@@ -40,6 +40,12 @@
 //
 //	events, err := client.MessageEvents(ctx, result.MessageID)
 //
+// # Suppressions
+//
+// CheckSuppression and RemoveSuppression look up and lift an address on the
+// tenant's suppression list, for a key holding suppressions:read and
+// suppressions:write respectively.
+//
 // # Retries
 //
 // This client does not retry a send whose outcome it does not know unless the
