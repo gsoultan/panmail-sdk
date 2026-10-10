@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	panmail "github.com/gsoultan/panmail-sdk"
 )
@@ -40,7 +41,27 @@ func TestSendDoesNotDrainABodyThatNeverEnds(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("got %v, want an APIError", err)
 	}
-	if len(apiErr.Message) > 8<<10 {
-		t.Fatalf("APIError.Message is %d bytes; a proxy page should be cut to a log line", len(apiErr.Message))
+}
+
+// A proxy page in front of a refusal can be a megabyte; the error carries
+// enough of it for a log line and no more, and never half a character.
+func TestALongProxyPageIsCutToALogLine(t *testing.T) {
+	g := respond(t, func(w http.ResponseWriter, _ int) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(strings.Repeat("é", 1<<19)))
+	})
+
+	_, err := client(t, g).Send(context.Background(), hello())
+
+	var apiErr *panmail.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("got %v, want an APIError", err)
+	}
+	if len(apiErr.Message) >= 4200 {
+		t.Errorf("APIError.Message is %d bytes; want it cut to about 4 KiB", len(apiErr.Message))
+	}
+	if !utf8.ValidString(apiErr.Message) {
+		t.Error("the cut left invalid UTF-8")
 	}
 }
