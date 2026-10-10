@@ -5,7 +5,8 @@ gateway, in Go and PHP.
 
 Both are the same small library in two languages: **one call to send** and one
 to list what you can send through, typed refusals you can act on, and a
-deliberate refusal to retry anything whose outcome is unknown. None of them depends on the gateway's source — they speak
+deliberate refusal to retry anything whose outcome is unknown unless an
+idempotency key makes that safe. None of them depends on the gateway's source — they speak
 [the wire contract](docs/WIRE.md), which is also what you want if you would
 rather POST JSON yourself or send over SMTP.
 
@@ -105,6 +106,7 @@ them is whether the gateway attached a delay.
 | Over the send rate | `*RateLimitedError` | `RateLimitedException` |
 | Backlog full | `*BacklogFullError` | `BacklogFullException` |
 | Recipient suppressed | `*SuppressedRecipientError` | `SuppressedRecipientException` |
+| Idempotency key reused for another message | `*IdempotencyKeyConflictError` | `IdempotencyKeyConflictException` |
 | Key rejected | `*AuthError` | `AuthException` |
 | Anything else | `*APIError` | `ApiException` |
 
@@ -117,13 +119,13 @@ queued. Slow down, or stop.
 
 ## Retries
 
-**These clients do not retry a send whose outcome they do not know.** Sending is
-not idempotent and the gateway has no de-duplication key, so a retry after a
-timeout or a dropped connection is a retry of a message that may already be on
-its way to the recipient.
+**These clients do not retry a send whose outcome they do not know** — unless
+you give it an idempotency key and ask. Without a key, a retry after a timeout
+or a dropped connection is a retry of a message that may already be on its way
+to the recipient.
 
-The one exception is a *refusal* — the gateway said plainly it did not accept
-the message — which every SDK will wait out if you ask:
+A *refusal* — the gateway said plainly it did not accept the message — is
+different, and the clients will wait out a rate limit if you ask:
 
 ```go
 panmail.New(url, key, panmail.WithRateLimitRetries(3))                  // Go
@@ -133,6 +135,44 @@ new Client($url, $key, ['rateLimitRetries' => 3]);                      // PHP
 It is off by default because it makes `send` block for as long as the gateway
 asks, which inside a request handler is a decision you should make rather than
 inherit. A queue of your own is usually the better answer.
+
+### Idempotency keys
+
+A key makes a repeated send safe. The gateway remembers it for 24 hours with
+the message it accepted, and answers the same key and the same request with
+that message instead of queueing another:
+
+```go
+client, _ := panmail.New(url, key, panmail.WithTransportRetries(3))
+result, err := client.Send(ctx, panmail.Message{
+    // ...
+    IdempotencyKey: "order-1042/receipt",
+})
+```
+
+```php
+$client = new Client($url, $key, ['transportRetries' => 3]);
+$result = $client->send(new Message(
+    // ...
+    idempotencyKey: 'order-1042/receipt',
+));
+```
+
+Name **what is being sent**, not the attempt — an order id and the kind of
+mail — so a retry from anywhere carries the same key. At most 255 printable
+ASCII characters. The same key with a *different* message is refused with
+`IdempotencyKeyConflictError` / `IdempotencyKeyConflictException`, and nothing
+is sent.
+
+`WithTransportRetries` / `transportRetries` repeats a keyed send whose outcome
+is unknown — a dropped connection, a timeout, or the gateway's `aborted` for a
+concurrent send with the same key — up to `n` times, waiting 0.1 s doubling to
+2 s between them. In Go the context's deadline ends it. A send without a key is
+never repeated this way, whatever the option says.
+
+**Turn it on only against a gateway that supports keys.** One that predates
+them ignores the field rather than refusing it, and nothing in its answer says
+so; retrying there sends duplicates.
 
 ## Listing providers
 

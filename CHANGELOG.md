@@ -8,6 +8,32 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
+### Added
+
+- **Idempotency keys** — `Message.IdempotencyKey` in Go, the `idempotencyKey`
+  argument of `Message` in PHP, sent as the `idempotencyKey` field of
+  `SendEmailRequest`. The gateway remembers a key for 24 hours with the message
+  it accepted and answers a repeat with that message instead of queueing
+  another. A key is checked against the gateway's rule — at most 255 printable
+  ASCII characters — before it is sent, and travels only in the body, never as
+  the `Idempotency-Key` header.
+
+  The same key with a different message is refused with the new
+  `IdempotencyKeyConflictError` / `IdempotencyKeyConflictException`
+  (`already_exists` on a send; a plain `APIError` / `ApiException` anywhere
+  else).
+
+  `WithTransportRetries(n)` / `transportRetries` repeats a **keyed** send whose
+  outcome is unknown — a request that did not complete, or the gateway's
+  `aborted` for a concurrent send with the same key — up to `n` times, waiting
+  0.1 s doubling to 2 s. Off by default. A send without a key is still never
+  repeated after an unknown outcome. Use it only against a gateway that
+  supports keys: one that predates them ignores the field, and retrying there
+  sends duplicates.
+
+  The gateway's side of this is not yet on its `main`, so `proto/` does not
+  have the field yet; `docs/WIRE.md` documents it.
+
 ### Fixed
 
 - **Go: a refusal no longer waits for the rest of a long body.** After reading

@@ -7,6 +7,7 @@ namespace Panmail;
 use Panmail\Exception\ApiException;
 use Panmail\Exception\AuthException;
 use Panmail\Exception\BacklogFullException;
+use Panmail\Exception\IdempotencyKeyConflictException;
 use Panmail\Exception\InvalidMessageException;
 use Panmail\Exception\RateLimitedException;
 use Panmail\Exception\SuppressedRecipientException;
@@ -43,12 +44,13 @@ use JsonException;
  *
  * # Retries
  *
- * This client does not retry a send whose outcome it does not know. Sending is
- * not idempotent and the gateway has no de-duplication key, so a retry after a
- * timeout or a dropped connection is a retry of a message that may already be
- * on its way to the recipient. The one exception is a refusal — the gateway
- * says plainly that it did not accept the message — which is safe to repeat
- * and which the rateLimitRetries option turns on.
+ * This client does not retry a send whose outcome it does not know unless the
+ * send carries an idempotency key. Without one a retry after a timeout or a
+ * dropped connection is a retry of a message that may already be on its way to
+ * the recipient. With one the gateway answers a repeat with the message it
+ * already accepted, and the transportRetries option turns that on. A refusal
+ * — the gateway says plainly that it did not accept the message — is safe to
+ * repeat either way, and the rateLimitRetries option waits out a rate limit.
  */
 final class Client
 {
@@ -106,6 +108,7 @@ final class Client
     private readonly string $baseUrl;
     private readonly int $timeout;
     private readonly int $rateLimitRetries;
+    private readonly int $transportRetries;
 
     /** @var array<string, string> */
     private readonly array $headers;
@@ -118,11 +121,22 @@ final class Client
      * @param array{
      *     timeout?: int,
      *     rateLimitRetries?: int,
+     *     transportRetries?: int,
      *     headers?: array<string, string>,
      *     transport?: Transport
      * } $options rateLimitRetries waits out up to n rate-limit refusals of a
      *            send, sleeping for the delay the gateway asks for each time.
      *            Off by default, and only ever applied to a refusal.
+     *
+     *            transportRetries repeats up to n times a send whose outcome is
+     *            unknown — a dropped connection, a timeout, the gateway's
+     *            "aborted" — but only a send carrying an idempotencyKey; without
+     *            one an unknown outcome is never repeated. Each repeat waits
+     *            first, from a tenth of a second doubling to two, and the
+     *            timeout bounds each attempt rather than the whole. Off by
+     *            default, and it relies on the gateway honouring the key: one
+     *            older than idempotency keys discards the field rather than
+     *            refusing it, so against such a gateway this sends duplicates.
      */
     public function __construct(string $baseUrl, string $apiKey, array $options = [])
     {
@@ -134,6 +148,7 @@ final class Client
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->timeout = max(1, $options['timeout'] ?? self::DEFAULT_TIMEOUT);
         $this->rateLimitRetries = max(0, $options['rateLimitRetries'] ?? 0);
+        $this->transportRetries = max(0, $options['transportRetries'] ?? 0);
         $this->transport = $options['transport'] ?? new CurlTransport();
 
         $headers = $options['headers'] ?? [];
@@ -170,6 +185,7 @@ final class Client
      * @throws InvalidMessageException a message refused before it was sent
      * @throws RateLimitedException    over the tenant's send rate; safe to repeat
      * @throws BacklogFullException    the queue is too deep; repeating makes it worse
+     * @throws IdempotencyKeyConflictException the idempotency key was used for a different message
      * @throws AuthException           the key was missing, rejected, or lacks email:send
      * @throws ApiException            any other refusal
      * @throws TransportException      the request did not complete
@@ -189,21 +205,44 @@ final class Client
             );
         }
 
-        for ($attempt = 0; ; $attempt++) {
+        $keyed = $message->idempotencyKey !== '';
+        $rateRetries = 0;
+        $outcomeRetries = 0;
+        for (;;) {
             try {
-                $decoded = $this->post(self::SEND_PROCEDURE, $body, $this->classifySend(...), 'a send result');
+                $decoded = $this->exchange(self::SEND_PROCEDURE, $body, $this->classifySend(...), 'a send result');
 
                 return new Result(
                     messageId: self::text($decoded['messageId'] ?? ''),
                     status: self::text($decoded['status'] ?? ''),
                 );
             } catch (RateLimitedException $refusal) {
-                if ($attempt >= $this->rateLimitRetries || $refusal->retryAfter <= 0) {
+                if ($rateRetries >= $this->rateLimitRetries || $refusal->retryAfter <= 0) {
                     throw $refusal;
                 }
+                $rateRetries++;
                 sleep($refusal->retryAfter);
+            } catch (UnknownOutcome $unknown) {
+                // Only with a key: the gateway answers a repeated key with the
+                // message it already accepted, so this asks what happened
+                // rather than sending again.
+                if (!$keyed || $outcomeRetries >= $this->transportRetries) {
+                    throw $unknown->error;
+                }
+                usleep(self::transportBackoffMicros($outcomeRetries));
+                $outcomeRetries++;
             }
         }
+    }
+
+    /**
+     * The wait before the nth repeat of a keyed send whose outcome was
+     * unknown: a tenth of a second, doubling, at most two. Short, because the
+     * repeat is a question rather than a second attempt at load.
+     */
+    private static function transportBackoffMicros(int $retried): int
+    {
+        return min(100_000 << min($retried, 5), 2_000_000);
     }
 
     /**
@@ -348,10 +387,45 @@ final class Client
      */
     private function post(string $procedure, string $body, callable $classify, string $expected): array
     {
-        $response = $this->transport->send($this->baseUrl . $procedure, $this->headers, $body, $this->timeout);
+        try {
+            return $this->exchange($procedure, $body, $classify, $expected);
+        } catch (UnknownOutcome $unknown) {
+            // Only a keyed send repeats an unknown outcome; anything else
+            // reports it as what it is.
+            throw $unknown->error;
+        }
+    }
+
+    /**
+     * post(), with an unknown outcome marked as one for send() to decide on.
+     *
+     * @param callable(Response): ApiException $classify
+     *
+     * @return array<mixed>
+     *
+     * @throws UnknownOutcome the request did not complete, or the gateway answered "aborted"
+     */
+    private function exchange(string $procedure, string $body, callable $classify, string $expected): array
+    {
+        try {
+            $response = $this->transport->send($this->baseUrl . $procedure, $this->headers, $body, $this->timeout);
+        } catch (TransportException $e) {
+            // The request did not complete, so whether the gateway acted on it
+            // is unknown. Marked rather than thrown as it is so send() can tell
+            // it from the TransportExceptions this method throws itself, about
+            // an answer that did arrive.
+            throw new UnknownOutcome($e);
+        }
 
         if ($response->status !== 200) {
-            throw $classify($response);
+            $refusal = $classify($response);
+            // The gateway's answer to a keyed send racing another with the
+            // same key, whose result it could not read yet. Asking again finds
+            // the first message — for a keyed send; see send().
+            if ($refusal->connectCode === 'aborted') {
+                throw new UnknownOutcome($refusal);
+            }
+            throw $refusal;
         }
 
         try {
@@ -436,6 +510,13 @@ final class Client
             // indistinguishable from the gateway having broken.
             'failed_precondition' => new SuppressedRecipientException(
                 "panmail: a recipient is suppressed, so the whole message was refused: $message",
+                $code,
+                $status
+            ),
+            // A send's idempotency key reused for a different request, and
+            // only that on the send path.
+            'already_exists' => new IdempotencyKeyConflictException(
+                "panmail: the idempotency key was already used for a different message: $message",
                 $code,
                 $status
             ),

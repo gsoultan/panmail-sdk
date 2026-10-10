@@ -50,9 +50,13 @@ foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
 One call returns the whole list, following the gateway's pages for you. Each
 provider carries its id, name, type and allowed From domains, and nothing else.
 
-**Retries are off by default and never applied to an unknown outcome.** Pass
-`['rateLimitRetries' => n]` to wait out rate-limit refusals — the one failure
-where the gateway said plainly it did not accept the message.
+**Retries are off by default, and an unknown outcome is never repeated without
+an idempotency key.** Pass `['rateLimitRetries' => n]` to wait out rate-limit
+refusals — where the gateway said plainly it did not accept the message. Give
+a message an `idempotencyKey` and pass `['transportRetries' => n]` to repeat a
+send that did not complete: the gateway answers the same key with the message
+it already accepted. Only against a gateway that supports keys — an older one
+ignores the field, and retrying there sends duplicates.
 
 Bring your own HTTP stack by passing `['transport' => $yourTransport]`, any
 implementation of `Panmail\Transport\Transport`.

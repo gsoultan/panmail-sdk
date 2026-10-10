@@ -35,12 +35,14 @@
 //
 // # Retries
 //
-// This client does not retry a send whose outcome it does not know. Sending is
-// not idempotent and the gateway has no de-duplication key, so a retry after a
-// timeout or a dropped connection is a retry of a message that may already be
-// on its way to the recipient. The one exception is a refusal — the gateway
-// says plainly that it did not accept the message — which is safe to repeat
-// and which WithRateLimitRetries turns on.
+// This client does not retry a send whose outcome it does not know unless the
+// send carries a Message.IdempotencyKey and the client was built with
+// WithTransportRetries. Without a key, a retry after a timeout or a dropped
+// connection is a retry of a message that may already be on its way to the
+// recipient; with one, the gateway answers the repeat with the message it
+// already accepted. A refusal — the gateway says plainly that it did not
+// accept the message — is safe to repeat either way, and WithRateLimitRetries
+// waits out a rate limit.
 //
 // # The api key
 //

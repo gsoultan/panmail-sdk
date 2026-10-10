@@ -53,7 +53,8 @@ The key carries the tenant, so there is nothing else to configure. Create one in
       "contentType": "application/pdf",
       "content": "JVBERi0xLjQ="
     }
-  ]
+  ],
+  "idempotencyKey": "order-1042/receipt"
 }
 ```
 
@@ -66,6 +67,7 @@ The key carries the tenant, so there is nothing else to configure. Create one in
 | `templateId` | Renders a stored template with `templateData` instead of the bodies. Subject comes from the template unless set here. |
 | `templateData` | A plain JSON object (`google.protobuf.Struct` on the wire — JSON and nothing more). |
 | `attachments[].content` | **base64.** It is a protobuf `bytes` field; raw bytes arrive as mojibake. |
+| `idempotencyKey` | Optional. Makes a repeated send safe — see [Idempotency keys](#idempotency-keys). At most 255 printable ASCII characters (`0x20`–`0x7E`). |
 
 Field names are the protobuf JSON names. The gateway also accepts the
 snake_case spellings (`provider_id`, `body_html`), but camelCase is what its own
@@ -116,6 +118,8 @@ Non-200 responses carry a Connect error envelope:
 | `permission_denied` | 403 | Key lacks the `email:send` scope. |
 | `failed_precondition` | 400 | A recipient is on the tenant's suppression list. |
 | `resource_exhausted` | 429 | **Two different things — see below.** |
+| `already_exists` | 409 | The `idempotencyKey` was already used for a different request. |
+| `aborted` | 409 | A concurrent send with the same `idempotencyKey` holds it; ask again. |
 | `unknown` | 500 | Something failed rather than refused. Retry with backoff. |
 
 #### A refusal is not a failure
@@ -131,6 +135,8 @@ cannot move. Only `unknown` means the gateway might succeed if asked again.
 | `unauthenticated`, `permission_denied` | refusal | Fix the key or its scopes. |
 | `failed_precondition` | refusal | A recipient is suppressed. The **whole** message is refused, not just that recipient's copy. Remove the address from the send, or lift the suppression. |
 | `resource_exhausted` | refusal | You are asking for more than you may have. The only one with a schedule attached, and only sometimes — see below. |
+| `already_exists` | refusal | The key names a different message. Nothing was sent; choose keys that name what is being sent. |
+| `aborted` | unknown outcome | Only for a keyed send racing another with the same key. Asking again with the same key returns the first message. |
 | `unknown` | failure | Storage, a provider connection. Retry with backoff. |
 
 Suppression is worth calling out because it is the one that reads like a
@@ -177,14 +183,67 @@ so a per-provider rate says nothing about how deep it is.
 
 #### Retrying
 
-**Do not retry a send whose outcome you do not know.** Sending is not
-idempotent and the gateway has no de-duplication key, so a retry after a
-timeout or a dropped connection is a retry of a message that may already be on
-its way to the recipient.
+**Do not retry a send whose outcome you do not know — unless it carries an
+idempotency key.** Without one, a retry after a timeout or a dropped
+connection is a retry of a message that may already be on its way to the
+recipient.
 
 A *refusal* is different — the gateway said plainly it did not accept the
-message — and is safe to repeat. That is the only retry the SDKs perform, and
-only for a rate limit, and only when asked.
+message — and is safe to repeat. The SDKs repeat a rate limit, and only when
+asked; with a key, and only when asked, they also repeat an unknown outcome.
+
+### Idempotency keys
+
+> **Gateway support is newer than this SDK's copy of the protos.** The field is
+> `string idempotency_key = 14` on `SendEmailRequest`. It is not yet on the
+> gateway's `main`, so `proto/` — a verbatim copy of `main` — does not have it.
+
+```json
+{ "providerId": "…", "from": "…", "to": ["…"], "bodyText": "…",
+  "idempotencyKey": "order-1042/receipt" }
+```
+
+The gateway remembers an accepted key, per tenant, for **24 hours**, together
+with the message it accepted and a hash of the request:
+
+| The same key arrives with… | Answer |
+| --- | --- |
+| the same request | `200`, the **original** `messageId`, status `EMAIL_EVENT_TYPE_PENDING`. Nothing new is queued. |
+| a different request | `already_exists` / 409, `"idempotency key reused with a different request"`. Nothing is sent. |
+| the same request, while the first is still being written | `aborted` / 409. Ask again; you will get the first message. |
+
+Only acceptance is remembered. A refusal — a rate limit, a suppressed
+recipient, an invalid request — stores nothing, so the next attempt with the
+same key is decided afresh.
+
+A key may instead travel in an `Idempotency-Key` header; sent in both places
+and different, it is `invalid_argument`. The SDKs send only the field. Go's
+`net/http` treats a request carrying that header as safe to resend and does so
+by itself after a dropped connection, which would be a retry nobody counted.
+
+Choose a key that names **what is being sent**, not the attempt: an order id
+and the kind of mail, not a random value made per call. A key minted per
+attempt makes every retry a new message.
+
+> **A gateway that predates the key ignores it.** Connect's JSON decoding
+> discards fields it does not know, so an older gateway accepts the send and
+> forgets the key. The request looks the same either way; nothing in the
+> response says the key was honoured. Retrying an unknown outcome is only
+> safe against a gateway known to support keys, which is why the SDKs make it
+> a separate opt-in.
+
+What the SDKs do with a key:
+
+- Send it as `idempotencyKey`, after checking the gateway's own rule (255
+  printable ASCII characters) so a bad key fails before the round trip.
+- Report `already_exists` on a send as its own type —
+  `IdempotencyKeyConflictError`, `IdempotencyKeyConflictException`.
+- With `WithTransportRetries(n)` / `transportRetries`, and only for a keyed
+  send, repeat up to `n` times a send whose outcome is unknown: one that did
+  not complete — a dropped connection, a timeout, a success cut off at the
+  response bound — or was answered `aborted`. Each repeat waits first, 0.1 s
+  doubling to at most 2 s. Go stops at the context's deadline. Every refusal,
+  `unknown` included, is a known outcome and is not repeated this way.
 
 ### cURL
 

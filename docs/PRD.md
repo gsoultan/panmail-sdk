@@ -11,7 +11,8 @@ this page covers only what the clients promise. The wire contract they speak is
 
 An application that sends through panmail needs three things from a client:
 one call that sends, an answer it can act on when the gateway refuses, and the
-certainty that the client never sends a message twice on its behalf. Anything
+certainty that the client never sends a message twice on its behalf — which,
+with an idempotency key, includes being able to ask again safely. Anything
 beyond that is surface the application has to learn and the client has to keep
 in step across two languages.
 
@@ -28,9 +29,10 @@ in step across two languages.
 | ID | Requirement |
 | --- | --- |
 | C1 | One call, `Send` / `send`, posts `EmailService.SendEmail` in Connect JSON mode and returns the message id and status. |
-| C2 | Refusals are typed by what they mean on that procedure: rate limited (with `RetryAfter`), backlog full, suppressed recipient, invalid message, authentication, and a generic API error with the Connect code. |
-| C3 | **No retry of an unknown outcome.** A transport error or timeout is reported, never retried. Only a rate-limit refusal may be repeated, and only when the caller opts in (`WithRateLimitRetries` / `rateLimitRetries`), within the caller's deadline. |
+| C2 | Refusals are typed by what they mean on that procedure: rate limited (with `RetryAfter`), backlog full, suppressed recipient, idempotency key reused for a different request, invalid message, authentication, and a generic API error with the Connect code. |
+| C3 | **No retry of an unknown outcome without an idempotency key.** A transport error or timeout on a send without a key is reported, never retried. A rate-limit refusal may be repeated when the caller opts in (`WithRateLimitRetries` / `rateLimitRetries`). A send that carries a key (`Message.IdempotencyKey` / `idempotencyKey`) may also have an unknown outcome — a request that did not complete, or the gateway's `aborted` — repeated, when the caller opts in separately (`WithTransportRetries` / `transportRetries`), with backoff. Both within the caller's deadline (Go's context; PHP bounds each attempt by its timeout and the attempts by count). |
 | C4 | `ListProviders` / `listProviders` pages through the tenant's providers (key needs `providers:read`), bounded in pages. |
+| C5 | An idempotency key is validated against the gateway's rule (at most 255 printable ASCII characters) before it is sent, and sent only in the body, never as the `Idempotency-Key` header. |
 
 ### Safety of the key
 
@@ -68,4 +70,3 @@ in step across two languages.
 ## Out of scope
 
 - A Node or Java client (use the HTTP API or the gateway's SMTP door).
-- Idempotency keys: the gateway has none, which is why C3 exists.

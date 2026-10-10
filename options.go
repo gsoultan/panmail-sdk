@@ -21,6 +21,7 @@ type options struct {
 	httpClient       *http.Client
 	timeout          time.Duration
 	rateLimitRetries int
+	transportRetries int
 	headers          map[string]string
 }
 
@@ -63,6 +64,30 @@ func WithRateLimitRetries(n int) Option {
 	return func(o *options) { o.rateLimitRetries = n }
 }
 
+// WithTransportRetries repeats up to n times a send whose outcome is unknown —
+// a dropped connection, a timeout, a response cut off — but only a send that
+// carries a Message.IdempotencyKey. Without a key nothing changes: an unknown
+// outcome is reported and never repeated, because the repeat may be a second
+// copy of a message already on its way.
+//
+// With a key the gateway answers a repeat with the message it already
+// accepted, so asking again is how the caller finds out what happened. It also
+// covers the gateway's own "aborted" answer, which says a concurrent send with
+// the same key holds it and its result is not readable yet.
+//
+// Each repeat waits first, starting at a tenth of a second and doubling to at
+// most two seconds, and none outlasts the context: a deadline that arrives
+// while waiting ends the send with the last error joined to the context's.
+// WithTimeout bounds each attempt, not the whole.
+//
+// Off by default, and it relies on the gateway honouring the key. One older
+// than idempotency keys discards the field as unknown rather than refusing
+// it, so against such a gateway this would send duplicates. Turn it on only
+// for a gateway known to support them.
+func WithTransportRetries(n int) Option {
+	return func(o *options) { o.transportRetries = n }
+}
+
 // WithHeader sets an extra HTTP header on every request — a tracing header, or
 // whatever a proxy in front of the gateway requires.
 //
@@ -101,6 +126,9 @@ func newOptions(opts []Option) options {
 
 	if resolved.rateLimitRetries < 0 {
 		resolved.rateLimitRetries = 0
+	}
+	if resolved.transportRetries < 0 {
+		resolved.transportRetries = 0
 	}
 	// Case-insensitively, because a header name is: "x-api-key" set here and
 	// X-API-Key set from the apiKey argument are the same header to the server.
@@ -157,5 +185,16 @@ func isControl(r rune) bool {
 // key to whatever host the Location header named. A Connect procedure has no
 // reason to redirect, so the safe reading of one is that something is wrong.
 func refuseRedirect(req *http.Request, _ []*http.Request) error {
-	return fmt.Errorf("panmail: the gateway redirected to %s; refusing to forward the api key", req.URL.Redacted())
+	return &redirectError{location: req.URL.Redacted()}
+}
+
+// redirectError is a refused redirect. It has a type of its own so that it is
+// not mistaken for a request that did not complete: something answered, and
+// asking again would be answered the same way.
+type redirectError struct {
+	location string
+}
+
+func (e *redirectError) Error() string {
+	return fmt.Sprintf("panmail: the gateway redirected to %s; refusing to forward the api key", e.location)
 }
