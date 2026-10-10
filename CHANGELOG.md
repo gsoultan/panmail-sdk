@@ -34,6 +34,25 @@ Both language packages take their version from the tag, so they are always relea
   The gateway's side of this is not yet on its `main`, so `proto/` does not
   have the field yet; `docs/WIRE.md` documents it.
 
+- **A message's delivery events** — `Client.MessageEvents` in Go and
+  `Client::messageEvents` in PHP, over the gateway's
+  `EventService.ListEvents` filtered by message id. The key needs
+  `events:read`, which no key has by default.
+
+  One call returns the message's whole history, every recipient, oldest
+  first, each event once; the gateway's two stores order it differently. An
+  empty message id is refused before it is sent, because the gateway reads it
+  as no filter and would answer with every event in the tenant. Pages of 100;
+  a repeated page token or more than 50 pages is an error rather than a
+  history cut short.
+
+  A `DeliveryEvent` carries its id, message id, type, recipient, time,
+  provider id and reason. The subject, provider name, tenant and the
+  provider's free-form metadata are not decoded.
+
+  `event_service.proto` joins the verbatim copies in `proto/` and the drift
+  check.
+
 ### Fixed
 
 - **Go: a refusal no longer waits for the rest of a long body.** After reading

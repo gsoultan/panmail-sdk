@@ -211,6 +211,35 @@ gateway, credentials excepted. If you only need the ids while setting an
 application up, a second key for that job keeps your sending key as narrow as
 it was.
 
+## What happened to a message
+
+A message's delivery history, for a key that also holds the **`events:read`**
+scope — which no key gets by default:
+
+```go
+events, err := client.MessageEvents(ctx, result.MessageID)
+for _, e := range events {
+    log.Println(e.Timestamp, e.Recipient, e.Type, e.Reason)
+}
+```
+
+```php
+foreach ($client->messageEvents($result->messageId) as $event) {
+    echo "{$event->recipient} {$event->type} {$event->reason}", PHP_EOL;
+}
+```
+
+One call returns every event the gateway has recorded for the message, for
+every recipient, oldest first; the latest per recipient is where that copy
+stands. An unknown id is an empty list. Each event carries its id, the message
+id, its type (a `Status` constant), the recipient, the time, the provider and
+the gateway's reason where there is one — not the subject, and not the
+provider's free-form metadata.
+
+`events:read` reads every message's history in the tenant, recipients
+included. A second key for the job that needs it keeps your sending key as
+narrow as it was.
+
 ## Not using an SDK
 
 You do not have to. [`docs/WIRE.md`](docs/WIRE.md) documents the HTTP JSON

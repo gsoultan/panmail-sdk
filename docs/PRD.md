@@ -33,6 +33,7 @@ in step across two languages.
 | C3 | **No retry of an unknown outcome without an idempotency key.** A transport error or timeout on a send without a key is reported, never retried. A rate-limit refusal may be repeated when the caller opts in (`WithRateLimitRetries` / `rateLimitRetries`). A send that carries a key (`Message.IdempotencyKey` / `idempotencyKey`) may also have an unknown outcome — a request that did not complete, or the gateway's `aborted` — repeated, when the caller opts in separately (`WithTransportRetries` / `transportRetries`), with backoff. Both within the caller's deadline (Go's context; PHP bounds each attempt by its timeout and the attempts by count). |
 | C4 | `ListProviders` / `listProviders` pages through the tenant's providers (key needs `providers:read`), bounded in pages. |
 | C5 | An idempotency key is validated against the gateway's rule (at most 255 printable ASCII characters) before it is sent, and sent only in the body, never as the `Idempotency-Key` header. |
+| C6 | `MessageEvents` / `messageEvents` returns one message's delivery events, oldest first (key needs `events:read`), bounded in pages; an empty message id is refused before it is sent, because the gateway reads it as no filter. |
 
 ### Safety of the key
 

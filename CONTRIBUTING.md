@@ -93,8 +93,9 @@ change here is unguarded until it is tagged and the gateway's `go.mod` moves.
 And it is **Go only**: PHP builds the same wire body by hand, and nothing
 compares it to the gateway. That is the gap that is actually left.
 
-It also only sends. Nothing there lists providers, so `ListProviders` is held to
-the gateway by this repo's tests and the synced protos alone until it does.
+It also only sends. Nothing there lists providers or reads events, so
+`ListProviders` and `MessageEvents` are held to the gateway by this repo's
+tests and the synced protos alone until it does.
 
 ## The wire contract
 

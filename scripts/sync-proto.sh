@@ -14,6 +14,9 @@
 # copied whole, so they bring the rest of EmailProviderService with them —
 # create, update, delete — which the clients never call. Trimming them would
 # end the byte-for-byte match that makes drift checkable at all.
+#
+# event_service.proto is ListEvents, which MessageEvents calls. The rest of
+# EventService — metrics, archives — comes with it for the same reason.
 set -euo pipefail
 
 gateway="${1:-}"
@@ -31,7 +34,8 @@ if [[ ! -d "$source_dir" ]]; then
 fi
 
 for file in common.proto event.proto email_service.proto webhook.proto \
-    email_provider_service.proto email_provider.proto provider_type.proto; do
+    email_provider_service.proto email_provider.proto provider_type.proto \
+    event_service.proto; do
     cp "$source_dir/$file" "$target_dir/$file"
     echo "synced $file"
 done

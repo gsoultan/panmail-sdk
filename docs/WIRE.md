@@ -541,9 +541,90 @@ call, because providers are configuration rather than a feed:
 
 ---
 
+## Reading a message's events
+
+What became of a message is on the same door as sending it.
+
+### The request
+
+```
+POST https://mail.example.com/panmail.v1.EventService/ListEvents
+Content-Type: application/json
+X-API-Key: <your key>
+```
+
+The key needs the **`events:read`** scope, which no key gets by default; a
+sending key is refused with `permission_denied`. `events:read` reads every
+message's delivery history in the tenant, recipients included.
+
+```json
+{ "pageSize": 100, "messageId": "0193b2f1-...", "pageToken": "…" }
+```
+
+| Field | Notes |
+| --- | --- |
+| `messageId` | The id a send returned. **An empty or absent one is no filter**: the answer is every event in the tenant. |
+| `pageSize` | Zero or absent is 50. The PostgreSQL store caps it at 500. |
+| `pageToken` | The previous page's `nextPageToken`. Opaque, and not the same shape on the two stores. |
+
+`ListEventsRequest` also filters by recipient, type, subject and time, and
+`latestOnly` keeps the newest event per message and recipient. The SDKs use
+`messageId` alone.
+
+### The response
+
+```json
+{
+  "events": [
+    {
+      "id": "…",
+      "tenantId": "…",
+      "providerId": "3f1c2b7a-…",
+      "providerName": "Production SES",
+      "messageId": "0193b2f1-...",
+      "type": "EMAIL_EVENT_TYPE_HARD_BOUNCE",
+      "recipient": "gone@example.org",
+      "subject": "Your receipt",
+      "timestamp": "2026-09-01T10:00:02.123456789Z",
+      "metadata": { "…": "…" },
+      "errorMessage": "550 5.1.1 mailbox unknown"
+    }
+  ],
+  "nextPageToken": "…"
+}
+```
+
+One event per thing that happened, per recipient. `type` is an
+`EmailEventType` name — or a bare number for a value the enum has no name for,
+as with provider types. `timestamp` is RFC 3339 with up to nine fractional
+digits. `errorMessage` is the provider's or the gateway's explanation, where
+there is one.
+
+**The order depends on the store.** PostgreSQL answers newest first; the Pebble
+store groups by recipient, newest first within each. An unknown `messageId` is
+an empty list, not an error.
+
+### What the SDKs add
+
+`MessageEvents` in Go and `messageEvents` in PHP return a message's whole
+history from one call:
+
+- An empty message id is refused before anything is sent.
+- Pages of 100, followed to the end, each event returned once, **sorted oldest
+  first** — the gateway's order kept between events in the same instant.
+- A page token seen twice, or more than 50 pages — 5,000 events for one
+  message — is an error rather than a history.
+- `id`, `messageId`, `type`, `recipient`, `timestamp`, `providerId` and
+  `errorMessage` (as `Reason` / `reason`) are decoded; the subject, provider
+  name, tenant and `metadata` are not. The metadata is a provider's own
+  vocabulary, with no shape the gateway promises.
+- No retries. Reading changes nothing, so calling again is always safe.
+
+---
+
 ## Generating your own client
 
 The protos are published in [`../proto`](../proto), copied verbatim from the
-gateway: the import closures of `SendEmail` and `ListEmailProviders`, and the
-webhook vocabulary. You do not need them to use an SDK or to POST JSON — they
+gateway: the import closures of `SendEmail`, `ListEmailProviders` and
+`ListEvents`, and the webhook vocabulary. You do not need them to use an SDK or to POST JSON — they
 are there for the case where you would rather generate a client than write one.

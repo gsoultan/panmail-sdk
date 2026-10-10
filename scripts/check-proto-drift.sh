@@ -21,7 +21,8 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 readonly FILES=(common.proto event.proto email_service.proto webhook.proto
-    email_provider_service.proto email_provider.proto provider_type.proto)
+    email_provider_service.proto email_provider.proto provider_type.proto
+    event_service.proto)
 readonly RAW="https://raw.githubusercontent.com/gsoultan/panmail/main/api/panmail/v1"
 
 gateway="${1:-}"

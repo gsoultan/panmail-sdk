@@ -33,6 +33,13 @@
 // A key minted for sending has email:send alone. See ListProviders for why a
 // second key for setup is worth considering before widening that one.
 //
+// # Delivery events
+//
+// MessageEvents returns what has happened to a message, for a key that also
+// holds the events:read scope:
+//
+//	events, err := client.MessageEvents(ctx, result.MessageID)
+//
 // # Retries
 //
 // This client does not retry a send whose outcome it does not know unless the

@@ -50,6 +50,15 @@ foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
 One call returns the whole list, following the gateway's pages for you. Each
 provider carries its id, name, type and allowed From domains, and nothing else.
 
+**A message's delivery events can be read** with a key that also holds
+`events:read`, oldest first, every recipient:
+
+```php
+foreach ($client->messageEvents($result->messageId) as $event) {
+    echo "{$event->recipient} {$event->type}", PHP_EOL;
+}
+```
+
 **Retries are off by default, and an unknown outcome is never repeated without
 an idempotency key.** Pass `['rateLimitRetries' => n]` to wait out rate-limit
 refusals — where the gateway said plainly it did not accept the message. Give
