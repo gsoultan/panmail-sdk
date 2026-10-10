@@ -17,8 +17,20 @@ final class CurlTransport implements Transport
      */
     private const MAX_RESPONSE_BYTES = 1 << 20;
 
+    /**
+     * One handle for the life of the transport, reset between requests, so
+     * cURL can keep the connection to the gateway open. A fresh handle per
+     * request paid a TCP and TLS handshake for every send and every page of
+     * a listing.
+     */
+    private ?\CurlHandle $handle = null;
+
     public function send(string $url, array $headers, string $body, int $timeout): Response
     {
+        if ($url === '') {
+            throw new TransportException('panmail: no URL to send to');
+        }
+
         $headerLines = [];
         foreach ($headers as $name => $value) {
             $headerLines[] = "$name: $value";
@@ -29,12 +41,21 @@ final class CurlTransport implements Transport
         $size = 0;
         $tooLarge = false;
 
-        $ch = curl_init($url);
-        if ($ch === false) {
-            throw new TransportException('panmail: could not initialise curl');
+        if ($this->handle === null) {
+            $handle = curl_init();
+            if ($handle === false) {
+                throw new TransportException('panmail: could not initialise curl');
+            }
+            $this->handle = $handle;
+        } else {
+            // Clears every option, including the callbacks below, which hold
+            // the previous request's buffers; the connection cache survives.
+            curl_reset($this->handle);
         }
+        $ch = $this->handle;
 
         curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
             CURLOPT_POST => true,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_HTTPHEADER => $headerLines,
@@ -55,7 +76,13 @@ final class CurlTransport implements Transport
             ): int {
                 $size += strlen($chunk);
                 if ($size > self::MAX_RESPONSE_BYTES) {
-                    // Any count but the chunk's length aborts the transfer.
+                    // Keep what fits, so a refusal can still be read from
+                    // its start, then stop: any count but the chunk's length
+                    // aborts the transfer.
+                    $room = self::MAX_RESPONSE_BYTES - strlen($payload);
+                    if ($room > 0) {
+                        $payload .= substr($chunk, 0, $room);
+                    }
                     $tooLarge = true;
 
                     return 0;
@@ -80,6 +107,14 @@ final class CurlTransport implements Transport
         // No curl_close(): it has had no effect since 8.0, when the handle
         // became an object the collector frees, and 8.5 deprecates calling it.
 
+        if ($tooLarge && $status >= 300) {
+            // A refusal is still classified when its body was cut short, as
+            // the Go client does: the status and code decide what it is, and
+            // a proxy's error page in front of a 429 can run long. Reporting
+            // it as a transport failure would call a plain "not accepted" an
+            // unknown outcome, and a rate limit would never be retried.
+            return new Response($status, $responseHeaders, $payload);
+        }
         if ($tooLarge) {
             throw new TransportException(
                 "panmail: the gateway's response exceeded " . self::MAX_RESPONSE_BYTES . ' bytes'

@@ -14,6 +14,9 @@ is `docs/WIRE.md`, and a change to what goes on the wire is written there first.
   checks, coverage floors.
 - `mem:working-in-this-checkout` — the owner edits here at the same time; how to
   commit without colliding.
+- `mem:review-2026-10` — response bounds after the 1 MiB read, PHP keeping a
+  refusal's status past the bound, error-message cuts, cURL handle reuse.
+- `docs/PRD.md` — what the clients are required to do; keep it in step.
 
 ## Standing rules
 

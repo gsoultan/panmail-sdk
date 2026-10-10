@@ -8,7 +8,25 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Go: a refusal no longer waits for the rest of a long body.** After reading
+  the first MiB of a response, the client drained everything that followed
+  before returning, so a proxy's endless error page or a decompression bomb
+  held `Send` until the HTTP client's own timeout (forever with a client that
+  has none). It now discards at most 64 KiB and closes the connection.
+- **PHP: a refusal behind a long proxy page is still a refusal.** A 429 whose
+  body ran past 1 MiB was reported as a `TransportException`, which reads as an
+  unknown outcome, so `rateLimitRetries` never applied. It is now classified
+  from its status and headers, as the Go client already did.
+- **Both: refusal messages are cut to 4 KiB.** An `APIError` / `ApiException`
+  used to carry up to a megabyte of a proxy's HTML.
+
+### Changed
+
+- **PHP: one cURL handle per transport.** It is reset between requests rather
+  than recreated, so consecutive sends and listing pages reuse the connection
+  instead of paying a TCP and TLS handshake each.
 
 ## [0.1.0-rc.3] — 2026-09-28
 

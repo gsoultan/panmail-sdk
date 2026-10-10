@@ -790,4 +790,22 @@ final class ClientTest extends TestCase
         }
     }
 
+
+    /**
+     * A proxy page in front of a refusal can be a megabyte; the exception
+     * carries enough of it for a log line and no more.
+     */
+    public function testALongProxyPageIsCutToALogLine(): void
+    {
+        $page = str_repeat('é', 1 << 19);
+        $transport = new FakeTransport(new Response(502, ['content-type' => 'text/html'], $page));
+
+        try {
+            self::client($transport)->send(self::hello());
+            self::fail('a 502 was not refused');
+        } catch (ApiException $refusal) {
+            self::assertLessThan(4200, strlen($refusal->getMessage()));
+            self::assertTrue(preg_match('//u', $refusal->getMessage()) === 1, 'the cut left invalid UTF-8');
+        }
+    }
 }

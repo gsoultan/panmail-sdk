@@ -60,7 +60,7 @@ jobs:
         with:
           # Pinned so a new release cannot turn main red on a rule nobody
           # chose. Dependabot proposes the bump; CI proves it on the PR.
-          version: v2.13.2
+          version: v2.14.0
 
   php:
     runs-on: ubuntu-latest
