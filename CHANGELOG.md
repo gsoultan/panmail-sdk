@@ -10,7 +10,7 @@ Both language packages take their version from the tag, so they are always relea
 
 Nothing yet.
 
-## [0.1.0] — 2026-10-10
+## [0.1.0] — 2026-10-11
 
 The first stable release. Beyond sending and listing providers, the clients now
 read a message's delivery events, check and lift suppressions, and parse
