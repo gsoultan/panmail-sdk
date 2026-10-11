@@ -7,6 +7,7 @@ namespace Panmail;
 use Panmail\Exception\ApiException;
 use Panmail\Exception\AuthException;
 use Panmail\Exception\BacklogFullException;
+use Panmail\Exception\IdempotencyKeyConflictException;
 use Panmail\Exception\InvalidMessageException;
 use Panmail\Exception\RateLimitedException;
 use Panmail\Exception\SuppressedRecipientException;
@@ -43,12 +44,13 @@ use JsonException;
  *
  * # Retries
  *
- * This client does not retry a send whose outcome it does not know. Sending is
- * not idempotent and the gateway has no de-duplication key, so a retry after a
- * timeout or a dropped connection is a retry of a message that may already be
- * on its way to the recipient. The one exception is a refusal — the gateway
- * says plainly that it did not accept the message — which is safe to repeat
- * and which the rateLimitRetries option turns on.
+ * This client does not retry a send whose outcome it does not know unless the
+ * send carries an idempotency key. Without one a retry after a timeout or a
+ * dropped connection is a retry of a message that may already be on its way to
+ * the recipient. With one the gateway answers a repeat with the message it
+ * already accepted, and the transportRetries option turns that on. A refusal
+ * — the gateway says plainly that it did not accept the message — is safe to
+ * repeat either way, and the rateLimitRetries option waits out a rate limit.
  */
 final class Client
 {
@@ -91,6 +93,33 @@ final class Client
     private const MAX_PROVIDER_PAGES = 200;
 
     /**
+     * The Connect route for EventService.ListEvents, the procedure the
+     * dashboard's delivery views read from.
+     */
+    private const LIST_EVENTS_PROCEDURE = '/panmail.v1.EventService/ListEvents';
+
+    /**
+     * How many events each request asks for. The gateway's PostgreSQL store
+     * caps a page at 500; a message's history is rarely more than a handful of
+     * events per recipient, so one page is the usual case.
+     */
+    private const EVENT_PAGE_SIZE = 100;
+
+    /**
+     * Bounds how long messageEvents() follows the gateway's page tokens, for
+     * the reason MAX_PROVIDER_PAGES does. At EVENT_PAGE_SIZE that is 5,000
+     * events for one message.
+     */
+    private const MAX_EVENT_PAGES = 50;
+
+    /**
+     * The two SuppressionService procedures this client calls. The service
+     * also adds, imports and lists; a sender needs none of it.
+     */
+    private const CHECK_SUPPRESSION_PROCEDURE = '/panmail.v1.SuppressionService/CheckSuppression';
+    private const REMOVE_SUPPRESSION_PROCEDURE = '/panmail.v1.SuppressionService/RemoveSuppression';
+
+    /**
      * Bounds a single request: a send, or one page of a provider listing.
      * Generous, because the gateway writes a message to its outbox before
      * answering and that is a disk write on a possibly busy database — but
@@ -106,6 +135,7 @@ final class Client
     private readonly string $baseUrl;
     private readonly int $timeout;
     private readonly int $rateLimitRetries;
+    private readonly int $transportRetries;
 
     /** @var array<string, string> */
     private readonly array $headers;
@@ -118,11 +148,22 @@ final class Client
      * @param array{
      *     timeout?: int,
      *     rateLimitRetries?: int,
+     *     transportRetries?: int,
      *     headers?: array<string, string>,
      *     transport?: Transport
      * } $options rateLimitRetries waits out up to n rate-limit refusals of a
      *            send, sleeping for the delay the gateway asks for each time.
      *            Off by default, and only ever applied to a refusal.
+     *
+     *            transportRetries repeats up to n times a send whose outcome is
+     *            unknown — a dropped connection, a timeout, the gateway's
+     *            "aborted" — but only a send carrying an idempotencyKey; without
+     *            one an unknown outcome is never repeated. Each repeat waits
+     *            first, from a tenth of a second doubling to two, and the
+     *            timeout bounds each attempt rather than the whole. Off by
+     *            default, and it relies on the gateway honouring the key: one
+     *            older than idempotency keys discards the field rather than
+     *            refusing it, so against such a gateway this sends duplicates.
      */
     public function __construct(string $baseUrl, string $apiKey, array $options = [])
     {
@@ -134,6 +175,7 @@ final class Client
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->timeout = max(1, $options['timeout'] ?? self::DEFAULT_TIMEOUT);
         $this->rateLimitRetries = max(0, $options['rateLimitRetries'] ?? 0);
+        $this->transportRetries = max(0, $options['transportRetries'] ?? 0);
         $this->transport = $options['transport'] ?? new CurlTransport();
 
         $headers = $options['headers'] ?? [];
@@ -170,6 +212,7 @@ final class Client
      * @throws InvalidMessageException a message refused before it was sent
      * @throws RateLimitedException    over the tenant's send rate; safe to repeat
      * @throws BacklogFullException    the queue is too deep; repeating makes it worse
+     * @throws IdempotencyKeyConflictException the idempotency key was used for a different message
      * @throws AuthException           the key was missing, rejected, or lacks email:send
      * @throws ApiException            any other refusal
      * @throws TransportException      the request did not complete
@@ -189,21 +232,44 @@ final class Client
             );
         }
 
-        for ($attempt = 0; ; $attempt++) {
+        $keyed = $message->idempotencyKey !== '';
+        $rateRetries = 0;
+        $outcomeRetries = 0;
+        for (;;) {
             try {
-                $decoded = $this->post(self::SEND_PROCEDURE, $body, $this->classifySend(...), 'a send result');
+                $decoded = $this->exchange(self::SEND_PROCEDURE, $body, $this->classifySend(...), 'a send result');
 
                 return new Result(
                     messageId: self::text($decoded['messageId'] ?? ''),
                     status: self::text($decoded['status'] ?? ''),
                 );
             } catch (RateLimitedException $refusal) {
-                if ($attempt >= $this->rateLimitRetries || $refusal->retryAfter <= 0) {
+                if ($rateRetries >= $this->rateLimitRetries || $refusal->retryAfter <= 0) {
                     throw $refusal;
                 }
+                $rateRetries++;
                 sleep($refusal->retryAfter);
+            } catch (UnknownOutcome $unknown) {
+                // Only with a key: the gateway answers a repeated key with the
+                // message it already accepted, so this asks what happened
+                // rather than sending again.
+                if (!$keyed || $outcomeRetries >= $this->transportRetries) {
+                    throw $unknown->error;
+                }
+                usleep(self::transportBackoffMicros($outcomeRetries));
+                $outcomeRetries++;
             }
         }
+    }
+
+    /**
+     * The wait before the nth repeat of a keyed send whose outcome was
+     * unknown: a tenth of a second, doubling, at most two. Short, because the
+     * repeat is a question rather than a second attempt at load.
+     */
+    private static function transportBackoffMicros(int $retried): int
+    {
+        return min(100_000 << min($retried, 5), 2_000_000);
     }
 
     /**
@@ -271,18 +337,7 @@ final class Client
         $followed = [];
 
         for ($page = 0; $page < self::MAX_PROVIDER_PAGES; $page++) {
-            try {
-                $body = json_encode($request, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-            } catch (JsonException $e) {
-                // Invalid UTF-8 in the name. Left alone this escapes as a bare
-                // JsonException, which no catch written from the list above
-                // would stop.
-                throw new InvalidMessageException(
-                    'panmail: the name filter could not be encoded as json: ' . $e->getMessage(),
-                    0,
-                    $e
-                );
-            }
+            $body = self::encodeRequest($request, 'the name filter');
 
             $decoded = $this->post(
                 self::LIST_PROVIDERS_PROCEDURE,
@@ -319,13 +374,7 @@ final class Client
                 return $providers;
             }
             if (isset($followed[$token])) {
-                // Escaped because the gateway wrote it and a log will read it:
-                // a newline in a token would otherwise start a line of its own.
-                $quoted = addcslashes($token, "\0..\37\"\\\177");
-                throw new TransportException(
-                    "panmail: the gateway handed out page token \"$quoted\" a second time; "
-                    . 'refusing to read the same pages again'
-                );
+                throw self::repeatedToken($token);
             }
             $followed[$token] = true;
             $request['pageToken'] = $token;
@@ -334,6 +383,241 @@ final class Client
         throw new TransportException(
             'panmail: the gateway was still paging after ' . self::MAX_PROVIDER_PAGES . ' pages of '
             . self::PROVIDER_PAGE_SIZE . ' providers; narrow the list with a name or type filter'
+        );
+    }
+
+    /**
+     * What has happened to a message so far, oldest first: every event the
+     * gateway has recorded for it, for every recipient.
+     *
+     * The key needs the events:read scope, which no key has by default. One
+     * minted for sending holds email:send alone and is refused with an
+     * AuthException naming the scope. events:read lets a key read every
+     * message's delivery history in the tenant — recipients included — so a
+     * second key for the job that needs it keeps the sending key as narrow as
+     * it was.
+     *
+     *     foreach ($client->messageEvents($result->messageId) as $event) {
+     *         echo "{$event->recipient} {$event->type}", PHP_EOL;
+     *     }
+     *
+     * An unknown message id is not an error: it has no events, and neither
+     * does a message from another tenant. The latest event per recipient is
+     * the state that recipient's copy is in.
+     *
+     * The gateway is asked for pages and they are joined here. Its stores
+     * order a message's events differently, so they are sorted here by time,
+     * keeping the gateway's order between two that share a timestamp. Each
+     * event is returned once. It stops with an exception rather than return a
+     * history cut short: at the first page token handed out twice, or after
+     * MAX_EVENT_PAGES pages.
+     *
+     * Nothing is retried. Reading changes nothing, so any exception is safe to
+     * repeat by calling again.
+     *
+     * @return list<DeliveryEvent>
+     *
+     * @throws InvalidMessageException no message id, or one that cannot be encoded as json
+     * @throws AuthException           the key was missing, rejected, or lacks events:read
+     * @throws ApiException            any other refusal
+     * @throws TransportException      the request did not complete, the gateway would not stop
+     *                                 paging, or it sent a timestamp that is not one
+     */
+    public function messageEvents(string $messageId): array
+    {
+        // The gateway reads an empty message id as no filter at all, and
+        // answers with every event the tenant has.
+        if ($messageId === '') {
+            throw new InvalidMessageException('panmail: a message id is required');
+        }
+        $request = ['pageSize' => self::EVENT_PAGE_SIZE, 'messageId' => $messageId];
+
+        $events = [];
+        $seen = [];
+        $followed = [];
+
+        for ($page = 0; $page < self::MAX_EVENT_PAGES; $page++) {
+            $body = self::encodeRequest($request, 'the message id');
+            $decoded = $this->post(self::LIST_EVENTS_PROCEDURE, $body, $this->classify(...), 'a page of events');
+
+            $listed = $decoded['events'] ?? [];
+            foreach (is_array($listed) ? $listed : [] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $event = self::deliveryEvent($item);
+                if (isset($seen[$event->id])) {
+                    continue;
+                }
+                $seen[$event->id] = true;
+                $events[] = $event;
+            }
+
+            $token = self::text($decoded['nextPageToken'] ?? '');
+            if ($token === '') {
+                // usort is stable, so two events in the same instant keep the
+                // gateway's order. No time sorts first, as Go's zero time does.
+                usort(
+                    $events,
+                    static fn (DeliveryEvent $a, DeliveryEvent $b): int => $a->timestamp <=> $b->timestamp
+                );
+
+                return $events;
+            }
+            if (isset($followed[$token])) {
+                throw self::repeatedToken($token);
+            }
+            $followed[$token] = true;
+            $request['pageToken'] = $token;
+        }
+
+        throw new TransportException(
+            'panmail: the gateway was still paging after ' . self::MAX_EVENT_PAGES . ' pages of '
+            . self::EVENT_PAGE_SIZE . ' events for one message'
+        );
+    }
+
+    /**
+     * Whether $address is on the tenant's suppression list, the list that
+     * turns a send to it into a SuppressedRecipientException.
+     *
+     * The gateway compares addresses as mailboxes, not strings: "Alice
+     * <Alice@Example.COM>" and "alice@example.com" are the same entry.
+     *
+     * The key needs the suppressions:read scope, which no key has by default.
+     * Nothing is retried, and checking changes nothing, so any exception is
+     * safe to repeat.
+     *
+     * @throws InvalidMessageException no address, or one that cannot be encoded as json
+     * @throws AuthException           the key was missing, rejected, or lacks suppressions:read
+     * @throws ApiException            any other refusal
+     * @throws TransportException      the request did not complete
+     */
+    public function checkSuppression(string $address): SuppressionCheck
+    {
+        $decoded = $this->post(
+            self::CHECK_SUPPRESSION_PROCEDURE,
+            self::suppressionBody($address),
+            $this->classify(...),
+            'a suppression check'
+        );
+
+        // protobuf JSON leaves false and "" out, so an address not on the
+        // list is an empty object.
+        return new SuppressionCheck(
+            suppressed: ($decoded['isSuppressed'] ?? false) === true,
+            reason: self::text($decoded['reason'] ?? ''),
+        );
+    }
+
+    /**
+     * Takes $address off the tenant's suppression list, so that sends to it
+     * are accepted again.
+     *
+     * Removing an address that is not on the list succeeds, so a removal is
+     * safe to repeat; that is also why nothing is retried here.
+     *
+     * The address was usually put there for a reason: a hard bounce or a
+     * complaint. Mailing it again without that reason having gone away is how
+     * a sending reputation is spent. Check the reason first.
+     *
+     * The key needs the suppressions:write scope, which no key has by default
+     * and which also lets the key add and import suppressions.
+     *
+     * @throws InvalidMessageException no address, or one that cannot be encoded as json
+     * @throws AuthException           the key was missing, rejected, or lacks suppressions:write
+     * @throws ApiException            any other refusal
+     * @throws TransportException      the request did not complete
+     */
+    public function removeSuppression(string $address): void
+    {
+        $this->post(
+            self::REMOVE_SUPPRESSION_PROCEDURE,
+            self::suppressionBody($address),
+            $this->classify(...),
+            'a removal result'
+        );
+    }
+
+    /**
+     * The gateway answers a check of no address with "not suppressed", which
+     * is true and useless, and refuses a removal of one. Neither is worth a
+     * round trip.
+     */
+    private static function suppressionBody(string $address): string
+    {
+        if ($address === '') {
+            throw new InvalidMessageException('panmail: an email address is required');
+        }
+
+        return self::encodeRequest(['email' => $address], 'the address');
+    }
+
+    /**
+     * The part of a listed event a sender needs; see DeliveryEvent.
+     *
+     * @param array<mixed> $item
+     */
+    private static function deliveryEvent(array $item): DeliveryEvent
+    {
+        // protobuf JSON leaves a zero value out, so no type is UNSPECIFIED; a
+        // value the enum has no name for is a bare number, kept as its
+        // decimal spelling.
+        $type = self::text($item['type'] ?? '');
+
+        return new DeliveryEvent(
+            id: self::text($item['id'] ?? ''),
+            messageId: self::text($item['messageId'] ?? ''),
+            type: $type === '' ? Status::UNSPECIFIED : $type,
+            recipient: self::text($item['recipient'] ?? ''),
+            timestamp: self::timestamp($item['timestamp'] ?? null),
+            providerId: self::text($item['providerId'] ?? ''),
+            reason: self::text($item['errorMessage'] ?? ''),
+        );
+    }
+
+    /** A protobuf JSON Timestamp; see Rfc3339. */
+    private static function timestamp(mixed $value): ?\DateTimeImmutable
+    {
+        if ($value === null) {
+            return null;
+        }
+        $text = self::text($value);
+        $parsed = Rfc3339::parse($text);
+        if ($parsed === null) {
+            throw new TransportException("panmail: the gateway sent a timestamp that is not one: \"$text\"");
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param array<string, mixed> $request
+     */
+    private static function encodeRequest(array $request, string $what): string
+    {
+        try {
+            return json_encode($request, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        } catch (JsonException $e) {
+            // Invalid UTF-8. Left alone this escapes as a bare JsonException,
+            // which no catch written from a @throws list would stop.
+            throw new InvalidMessageException(
+                "panmail: $what could not be encoded as json: " . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    private static function repeatedToken(string $token): TransportException
+    {
+        // Escaped because the gateway wrote it and a log will read it: a
+        // newline in a token would otherwise start a line of its own.
+        $quoted = addcslashes($token, "\0..\37\"\\\177");
+
+        return new TransportException(
+            "panmail: the gateway handed out page token \"$quoted\" a second time; "
+            . 'refusing to read the same pages again'
         );
     }
 
@@ -348,10 +632,45 @@ final class Client
      */
     private function post(string $procedure, string $body, callable $classify, string $expected): array
     {
-        $response = $this->transport->send($this->baseUrl . $procedure, $this->headers, $body, $this->timeout);
+        try {
+            return $this->exchange($procedure, $body, $classify, $expected);
+        } catch (UnknownOutcome $unknown) {
+            // Only a keyed send repeats an unknown outcome; anything else
+            // reports it as what it is.
+            throw $unknown->error;
+        }
+    }
+
+    /**
+     * post(), with an unknown outcome marked as one for send() to decide on.
+     *
+     * @param callable(Response): ApiException $classify
+     *
+     * @return array<mixed>
+     *
+     * @throws UnknownOutcome the request did not complete, or the gateway answered "aborted"
+     */
+    private function exchange(string $procedure, string $body, callable $classify, string $expected): array
+    {
+        try {
+            $response = $this->transport->send($this->baseUrl . $procedure, $this->headers, $body, $this->timeout);
+        } catch (TransportException $e) {
+            // The request did not complete, so whether the gateway acted on it
+            // is unknown. Marked rather than thrown as it is so send() can tell
+            // it from the TransportExceptions this method throws itself, about
+            // an answer that did arrive.
+            throw new UnknownOutcome($e);
+        }
 
         if ($response->status !== 200) {
-            throw $classify($response);
+            $refusal = $classify($response);
+            // The gateway's answer to a keyed send racing another with the
+            // same key, whose result it could not read yet. Asking again finds
+            // the first message — for a keyed send; see send().
+            if ($refusal->connectCode === 'aborted') {
+                throw new UnknownOutcome($refusal);
+            }
+            throw $refusal;
         }
 
         try {
@@ -436,6 +755,13 @@ final class Client
             // indistinguishable from the gateway having broken.
             'failed_precondition' => new SuppressedRecipientException(
                 "panmail: a recipient is suppressed, so the whole message was refused: $message",
+                $code,
+                $status
+            ),
+            // A send's idempotency key reused for a different request, and
+            // only that on the send path.
+            'already_exists' => new IdempotencyKeyConflictException(
+                "panmail: the idempotency key was already used for a different message: $message",
                 $code,
                 $status
             ),

@@ -37,7 +37,28 @@ type Message struct {
 	TemplateData map[string]any
 
 	Attachments []Attachment
+
+	// IdempotencyKey makes a repeated send safe. The gateway remembers the key
+	// for 24 hours alongside the message it accepted, and answers the same key
+	// with the same request by returning that message rather than queueing
+	// another. The same key with a different request is refused with an
+	// IdempotencyKeyConflictError.
+	//
+	// Use something that names the thing being sent, not the attempt — an
+	// order id and the kind of mail, say — so a retry from anywhere, this
+	// process or the next, carries the same key. At most 255 printable ASCII
+	// characters.
+	//
+	// Setting it is what lets WithTransportRetries repeat a send whose outcome
+	// is unknown. A gateway older than the key ignores the field rather than
+	// refusing it, so a key promises nothing against one; see
+	// WithTransportRetries.
+	IdempotencyKey string
 }
+
+// maxIdempotencyKeyLength is the gateway's bound on a key, in bytes. Keys are
+// printable ASCII, so bytes and characters are the same count.
+const maxIdempotencyKeyLength = 255
 
 // ErrNoRecipients reports a message addressed to nobody.
 var ErrNoRecipients = errors.New("panmail: at least one recipient is required")
@@ -59,6 +80,13 @@ type sendRequest struct {
 	TemplateID   string           `json:"templateId,omitempty"`
 	TemplateData map[string]any   `json:"templateData,omitempty"`
 	Attachments  []attachmentJSON `json:"attachments,omitempty"`
+
+	// IdempotencyKey travels in the body, never as the Idempotency-Key header
+	// the gateway also accepts. Go's http.Transport treats a request carrying
+	// that header as safe to resend and does so by itself on a dropped
+	// connection, which would be a retry this client neither counted nor
+	// allowed.
+	IdempotencyKey string `json:"idempotencyKey,omitempty"`
 }
 
 // request validates the message and converts it to the wire type.
@@ -80,17 +108,22 @@ func (m Message) request() (*sendRequest, error) {
 		return nil, errors.New("panmail: a message needs an html body, a text body or a template id")
 	}
 
+	if err := validateIdempotencyKey(m.IdempotencyKey); err != nil {
+		return nil, err
+	}
+
 	req := &sendRequest{
-		ProviderID:   m.ProviderID,
-		From:         m.From,
-		To:           m.To,
-		Cc:           m.Cc,
-		Bcc:          m.Bcc,
-		Subject:      m.Subject,
-		BodyHTML:     m.HTML,
-		BodyText:     m.Text,
-		TemplateID:   m.TemplateID,
-		TemplateData: m.TemplateData,
+		ProviderID:     m.ProviderID,
+		From:           m.From,
+		To:             m.To,
+		Cc:             m.Cc,
+		Bcc:            m.Bcc,
+		Subject:        m.Subject,
+		BodyHTML:       m.HTML,
+		BodyText:       m.Text,
+		TemplateID:     m.TemplateID,
+		TemplateData:   m.TemplateData,
+		IdempotencyKey: m.IdempotencyKey,
 	}
 
 	if len(m.TemplateData) > 0 {
@@ -112,4 +145,19 @@ func (m Message) request() (*sendRequest, error) {
 	}
 
 	return req, nil
+}
+
+// validateIdempotencyKey applies the gateway's own rule, so a key it would
+// refuse costs a clear error here rather than a round trip.
+func validateIdempotencyKey(key string) error {
+	if len(key) > maxIdempotencyKeyLength {
+		return fmt.Errorf("panmail: the idempotency key is %d characters long; the limit is %d",
+			len(key), maxIdempotencyKeyLength)
+	}
+	for i := 0; i < len(key); i++ {
+		if c := key[i]; c < 0x20 || c > 0x7e {
+			return fmt.Errorf("panmail: the idempotency key may contain only printable ASCII; byte %d is not", i)
+		}
+	}
+	return nil
 }

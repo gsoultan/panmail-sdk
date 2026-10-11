@@ -15,6 +15,12 @@ use Panmail\Exception\InvalidMessageException;
 final class Message
 {
     /**
+     * The gateway's bound on an idempotency key, in bytes. Keys are printable
+     * ASCII, so bytes and characters are the same count.
+     */
+    private const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
+
+    /**
      * @param string             $providerId   The configured sending provider, as shown on the
      *                                         Email Providers page. Required: panmail will not
      *                                         guess which of a tenant's providers a message goes
@@ -35,6 +41,18 @@ final class Message
      *                                         template unless set here.
      * @param array<string,mixed> $templateData
      * @param list<Attachment>   $attachments
+     * @param string             $idempotencyKey Makes a repeated send safe. The gateway remembers
+     *                                         the key for 24 hours alongside the message it
+     *                                         accepted, and answers the same key with the same
+     *                                         request by returning that message rather than
+     *                                         queueing another; the same key with a different
+     *                                         request is an IdempotencyKeyConflictException.
+     *                                         Name the thing being sent, not the attempt — an
+     *                                         order id and the kind of mail — so a retry from
+     *                                         anywhere carries the same key. At most 255
+     *                                         printable ASCII characters. Setting it is what
+     *                                         lets the transportRetries option repeat a send
+     *                                         whose outcome is unknown.
      */
     public function __construct(
         public readonly string $providerId,
@@ -48,6 +66,7 @@ final class Message
         public readonly string $templateId = '',
         public readonly array $templateData = [],
         public readonly array $attachments = [],
+        public readonly string $idempotencyKey = '',
     ) {
     }
 
@@ -78,6 +97,8 @@ final class Message
                 'panmail: a message needs an html body, a text body or a template id'
             );
         }
+
+        self::validateIdempotencyKey($this->idempotencyKey);
 
         $payload = [
             'providerId' => $this->providerId,
@@ -118,6 +139,34 @@ final class Message
             $payload['attachments'][] = $attachment->toArray();
         }
 
+        // In the body, never as the Idempotency-Key header the gateway also
+        // accepts: one place for it, and the same request the Go client sends.
+        if ($this->idempotencyKey !== '') {
+            $payload['idempotencyKey'] = $this->idempotencyKey;
+        }
+
         return $payload;
+    }
+
+    /**
+     * The gateway's own rule, so a key it would refuse costs a clear error
+     * here rather than a round trip.
+     *
+     * @throws InvalidMessageException
+     */
+    private static function validateIdempotencyKey(string $key): void
+    {
+        if (strlen($key) > self::MAX_IDEMPOTENCY_KEY_LENGTH) {
+            throw new InvalidMessageException(
+                'panmail: the idempotency key is ' . strlen($key) . ' characters long; the limit is '
+                . self::MAX_IDEMPOTENCY_KEY_LENGTH
+            );
+        }
+        if (preg_match('/[^\x20-\x7e]/', $key, $match, PREG_OFFSET_CAPTURE) === 1) {
+            throw new InvalidMessageException(
+                'panmail: the idempotency key may contain only printable ASCII; byte '
+                . $match[0][1] . ' is not'
+            );
+        }
     }
 }

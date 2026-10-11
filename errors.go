@@ -88,6 +88,24 @@ func (e *SuppressedRecipientError) Error() string {
 
 func (e *SuppressedRecipientError) Unwrap() error { return e.err }
 
+// IdempotencyKeyConflictError reports a send whose idempotency key the gateway
+// had already accepted, within the last 24 hours, for a different request.
+//
+// Nothing was sent. Answering with the first message would tell the caller
+// something it did not ask for had gone out, and queueing this one would make
+// the key mean nothing, so the gateway does neither. It is a bug in how keys
+// are chosen — two different messages given the same one — and repeating it
+// gets the same answer until the key changes or the day is out.
+type IdempotencyKeyConflictError struct {
+	err error
+}
+
+func (e *IdempotencyKeyConflictError) Error() string {
+	return fmt.Sprintf("panmail: the idempotency key was already used for a different message: %v", e.err)
+}
+
+func (e *IdempotencyKeyConflictError) Unwrap() error { return e.err }
+
 // AuthError reports that the API key was missing, rejected, or lacks the scope
 // the call needs: email:send to send, providers:read to list providers. The
 // gateway names the missing scope in the message.
@@ -115,6 +133,16 @@ const (
 	// recipient arrived as "unknown" with a 500 and was indistinguishable from
 	// the gateway having broken.
 	codeFailedPrecondition = "failed_precondition"
+
+	// codeAlreadyExists is a send's idempotency key reused for a different
+	// request, and only that on the send path.
+	codeAlreadyExists = "already_exists"
+
+	// codeAborted is the gateway saying a concurrent send with the same
+	// idempotency key holds it and its outcome cannot be read yet. It is
+	// sent only for a keyed send, and asking again finds the first message;
+	// see unknownOutcome.
+	codeAborted = "aborted"
 )
 
 // classifySend turns a refusal of a send into something a caller can act on.
@@ -135,6 +163,8 @@ func classifySend(apiErr *APIError, header http.Header) error {
 		return &BacklogFullError{err: apiErr}
 	case codeFailedPrecondition:
 		return &SuppressedRecipientError{err: apiErr}
+	case codeAlreadyExists:
+		return &IdempotencyKeyConflictError{err: apiErr}
 	default:
 		return classify(apiErr, header)
 	}

@@ -7,16 +7,20 @@ namespace Panmail\Tests;
 use Panmail\Transport\Response;
 use Panmail\Transport\Transport;
 
-/** A transport that records what it was sent and answers from a script. */
+/**
+ * A transport that records what it was sent and answers from a script. A
+ * scripted Throwable is thrown instead of answered: a request that did not
+ * complete.
+ */
 final class FakeTransport implements Transport
 {
     /** @var list<array{url: string, headers: array<string, string>, body: array<string, mixed>}> */
     public array $calls = [];
 
-    /** @var list<Response> */
+    /** @var list<Response|\Throwable> */
     private array $queue;
 
-    public function __construct(Response ...$responses)
+    public function __construct(Response|\Throwable ...$responses)
     {
         $this->queue = $responses;
     }
@@ -31,6 +35,11 @@ final class FakeTransport implements Transport
 
         // The last scripted response repeats, so a test that retries need not
         // spell out every attempt.
-        return count($this->queue) > 1 ? array_shift($this->queue) : $this->queue[0];
+        $next = count($this->queue) > 1 ? array_shift($this->queue) : $this->queue[0];
+        if ($next instanceof \Throwable) {
+            throw $next;
+        }
+
+        return $next;
     }
 }

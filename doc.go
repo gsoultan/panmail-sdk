@@ -33,14 +33,36 @@
 // A key minted for sending has email:send alone. See ListProviders for why a
 // second key for setup is worth considering before widening that one.
 //
+// # Delivery events
+//
+// MessageEvents returns what has happened to a message, for a key that also
+// holds the events:read scope:
+//
+//	events, err := client.MessageEvents(ctx, result.MessageID)
+//
+// # Suppressions
+//
+// CheckSuppression and RemoveSuppression look up and lift an address on the
+// tenant's suppression list, for a key holding suppressions:read and
+// suppressions:write respectively.
+//
+// # Webhooks
+//
+// VerifyWebhook checks a delivery came from the gateway; ParseWebhook does the
+// same and decodes its data into a MailEvent, MailHeld, MailHoldOutcome or
+// InboundMail, leaving the payload nil for an event this version does not
+// know.
+//
 // # Retries
 //
-// This client does not retry a send whose outcome it does not know. Sending is
-// not idempotent and the gateway has no de-duplication key, so a retry after a
-// timeout or a dropped connection is a retry of a message that may already be
-// on its way to the recipient. The one exception is a refusal — the gateway
-// says plainly that it did not accept the message — which is safe to repeat
-// and which WithRateLimitRetries turns on.
+// This client does not retry a send whose outcome it does not know unless the
+// send carries a Message.IdempotencyKey and the client was built with
+// WithTransportRetries. Without a key, a retry after a timeout or a dropped
+// connection is a retry of a message that may already be on its way to the
+// recipient; with one, the gateway answers the repeat with the message it
+// already accepted. A refusal — the gateway says plainly that it did not
+// accept the message — is safe to repeat either way, and WithRateLimitRetries
+// waits out a rate limit.
 //
 // # The api key
 //

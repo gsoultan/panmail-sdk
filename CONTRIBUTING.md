@@ -58,6 +58,17 @@ there is no code generator in this build and adding one to keep fifteen strings
 in step would be the wrong trade. `testdata/provider-types.json` is
 `ProviderType`, generated the same way — the kind of provider a listing returns.
 
+`testdata/event-types.json` also maps each `EmailEventType` number to its
+name, because a webhook's delivery event carries the number. Both clients keep
+a table of their own for that, checked against it.
+
+`testdata/webhook-payloads.json` is one webhook body of each payload shape,
+byte for byte as the gateway built it. Those shapes are the gateway's Go struct
+tags, not its protos, so the drift check is blind to them; there is no script
+either, because the types are internal to the gateway and a generator has to
+run inside its module. When the gateway changes one of them, regenerate the
+body by hand and say at which commit in the fixture's comment.
+
 `testdata/content-types.json` is the extension-to-content-type mapping, and
 every client reads it in its own test suite. It exists because the clients had
 already drifted on it once. If you add an extension, add it there — not to a
@@ -93,8 +104,10 @@ change here is unguarded until it is tagged and the gateway's `go.mod` moves.
 And it is **Go only**: PHP builds the same wire body by hand, and nothing
 compares it to the gateway. That is the gap that is actually left.
 
-It also only sends. Nothing there lists providers, so `ListProviders` is held to
-the gateway by this repo's tests and the synced protos alone until it does.
+It also only sends. Nothing there lists providers, reads events or touches
+suppressions, so `ListProviders`, `MessageEvents`, `CheckSuppression` and
+`RemoveSuppression` are held to the gateway by this repo's tests and the synced
+protos alone until it does.
 
 ## The wire contract
 

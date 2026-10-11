@@ -8,8 +8,92 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] — 2026-10-10
+
+The first stable release. Beyond sending and listing providers, the clients now
+read a message's delivery events, check and lift suppressions, and parse
+verified webhooks into typed events. With an idempotency key, a send whose
+outcome is unknown can finally be retried safely; it needs gateway v2.0.0.
+Responses are bounded, so a proxy's endless error page can no longer hold a
+call open.
+
+### Added
+
+- **Idempotency keys** — `Message.IdempotencyKey` in Go, the `idempotencyKey`
+  argument of `Message` in PHP, sent as the `idempotencyKey` field of
+  `SendEmailRequest`. The gateway remembers a key for 24 hours with the message
+  it accepted and answers a repeat with that message instead of queueing
+  another. A key is checked against the gateway's rule — at most 255 printable
+  ASCII characters — before it is sent, and travels only in the body, never as
+  the `Idempotency-Key` header.
+
+  The same key with a different message is refused with the new
+  `IdempotencyKeyConflictError` / `IdempotencyKeyConflictException`
+  (`already_exists` on a send; a plain `APIError` / `ApiException` anywhere
+  else).
+
+  `WithTransportRetries(n)` / `transportRetries` repeats a **keyed** send whose
+  outcome is unknown — a request that did not complete, or the gateway's
+  `aborted` for a concurrent send with the same key — up to `n` times, waiting
+  0.1 s doubling to 2 s. Off by default. A send without a key is still never
+  repeated after an unknown outcome. Use it only against a gateway that
+  supports keys: one that predates them ignores the field, and retrying there
+  sends duplicates.
+
+  The gateway added the field in gsoultan/panmail#72, and `proto/` now carries
+  it.
+
+- **A message's delivery events** — `Client.MessageEvents` in Go and
+  `Client::messageEvents` in PHP, over the gateway's
+  `EventService.ListEvents` filtered by message id. The key needs
+  `events:read`, which no key has by default.
+
+  One call returns the message's whole history, every recipient, oldest
+  first, each event once; the gateway's two stores order it differently. An
+  empty message id is refused before it is sent, because the gateway reads it
+  as no filter and would answer with every event in the tenant. Pages of 100;
+  a repeated page token or more than 50 pages is an error rather than a
+  history cut short.
+
+  A `DeliveryEvent` carries its id, message id, type, recipient, time,
+  provider id and reason. The subject, provider name, tenant and the
+  provider's free-form metadata are not decoded.
+
+  `event_service.proto` joins the verbatim copies in `proto/` and the drift
+  check.
+
+- **Suppressions** — `CheckSuppression` / `checkSuppression` reports whether an
+  address is on the tenant's suppression list and why, for a key with
+  `suppressions:read`; `RemoveSuppression` / `removeSuppression` lifts it, for
+  a key with `suppressions:write`. Neither scope is granted by default. The
+  gateway compares mailboxes rather than strings. An empty address is refused
+  before it is sent; nothing is retried, and a removal of an address not on
+  the list succeeds, so it is safe to repeat. `suppression_service.proto` and
+  `suppression.proto` join `proto/` and the drift check.
+
+- **Typed webhook payloads** — `ParseWebhook` in Go and `Webhook::parse` in
+  PHP verify a delivery exactly as before, then decode its data by event into
+  `MailEvent` (sent, delivered, opened, clicked, bounced, rejected),
+  `MailHeld`, `MailHoldOutcome` (released, quarantine-rejected, expired) or
+  `InboundMail`. The shapes are the gateway's Go struct tags, since it
+  marshals webhooks with `encoding/json`: snake_case, a delivery event's type
+  as an `EmailEventType` number — turned back into its `Status` name — and an
+  inbound timestamp as `{seconds, nanos}`. Both suites parse the same gateway
+  bytes from the new `testdata/webhook-payloads.json`, and
+  `testdata/event-types.json` gains the enum's numbers.
+
+  An event the client has no type for is returned verified with no payload,
+  not refused, so a newer gateway's deliveries are not bounced into retries. A
+  known event whose data is the wrong shape is refused rather than half
+  decoded.
+
 ### Fixed
 
+- **The webhook payload was documented wrong.** `docs/WIRE.md` showed `data`
+  as `{"messageId", "reason"}`; it is the gateway's delivery event in
+  snake_case, with the event type as a number. It now documents every payload.
 - **Go: a refusal no longer waits for the rest of a long body.** After reading
   the first MiB of a response, the client drained everything that followed
   before returning, so a proxy's endless error page or a decompression bomb

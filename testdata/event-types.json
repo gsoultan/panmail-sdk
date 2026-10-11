@@ -12,7 +12,12 @@
     "proto changes, the same way the protos themselves are synced.",
     "",
     "UNSPECIFIED is here because the proto has it. It is the zero value",
-    "protobuf requires, not a state a message is ever in."
+    "protobuf requires, not a state a message is ever in.",
+    "",
+    "\"numbers\" maps each value's number to its name. A webhook's delivery",
+    "event carries the number, because the gateway marshals it with",
+    "encoding/json rather than protojson; the clients turn it back into a",
+    "name with a table of their own, checked against this."
   ],
   "constants": {
     "UNSPECIFIED": "EMAIL_EVENT_TYPE_UNSPECIFIED",
@@ -30,5 +35,22 @@
     "PENDING": "EMAIL_EVENT_TYPE_PENDING",
     "DEFERRED": "EMAIL_EVENT_TYPE_DEFERRED",
     "COMPLAINED": "EMAIL_EVENT_TYPE_COMPLAINED"
+  },
+  "numbers": {
+    "0": "EMAIL_EVENT_TYPE_UNSPECIFIED",
+    "1": "EMAIL_EVENT_TYPE_SENT",
+    "2": "EMAIL_EVENT_TYPE_DELIVERED",
+    "3": "EMAIL_EVENT_TYPE_OPENED",
+    "4": "EMAIL_EVENT_TYPE_CLICKED",
+    "5": "EMAIL_EVENT_TYPE_BOUNCED",
+    "6": "EMAIL_EVENT_TYPE_HARD_BOUNCE",
+    "7": "EMAIL_EVENT_TYPE_SOFT_BOUNCE",
+    "8": "EMAIL_EVENT_TYPE_SPAM_REPORT",
+    "9": "EMAIL_EVENT_TYPE_UNSUBSCRIBED",
+    "10": "EMAIL_EVENT_TYPE_DROPPED",
+    "11": "EMAIL_EVENT_TYPE_REJECTED",
+    "12": "EMAIL_EVENT_TYPE_PENDING",
+    "13": "EMAIL_EVENT_TYPE_DEFERRED",
+    "14": "EMAIL_EVENT_TYPE_COMPLAINED"
   }
 }

@@ -101,9 +101,10 @@ func New(baseURL, apiKey string, opts ...Option) (*Client, error) {
 // retention deadline with nobody having reviewed it.
 //
 // An error is either a refusal the caller can act on — see RateLimitedError,
-// BacklogFullError and AuthError — or the transport error underneath. A send
-// that fails with an unknown outcome is not retried; see the package
-// documentation for why.
+// BacklogFullError, SuppressedRecipientError, IdempotencyKeyConflictError and
+// AuthError — or the transport error underneath. A send that fails with an
+// unknown outcome is not retried unless it carries an idempotency key and the
+// client was built with WithTransportRetries; see the package documentation.
 func (c *Client) Send(ctx context.Context, msg Message) (Result, error) {
 	req, err := msg.request()
 	if err != nil {
@@ -115,7 +116,9 @@ func (c *Client) Send(ctx context.Context, msg Message) (Result, error) {
 		return Result{}, fmt.Errorf("panmail: encoding the message failed: %w", err)
 	}
 
-	for attempt := 0; ; attempt++ {
+	keyed := msg.IdempotencyKey != ""
+	rateRetries, outcomeRetries := 0, 0
+	for {
 		var decoded struct {
 			MessageID string `json:"messageId"`
 			Status    Status `json:"status"`
@@ -125,10 +128,20 @@ func (c *Client) Send(ctx context.Context, msg Message) (Result, error) {
 			return Result{MessageID: decoded.MessageID, Status: decoded.Status}, nil
 		}
 
-		wait, ok := c.waitBefore(err, attempt)
-		if !ok {
+		var wait time.Duration
+		if limited, ok := c.waitOutRateLimit(err, rateRetries); ok {
+			wait = limited
+			rateRetries++
+		} else if keyed && outcomeRetries < c.opts.transportRetries && ctx.Err() == nil && unknownOutcome(err) {
+			// Only with a key: the gateway answers a repeated key with the
+			// message it already accepted, so this asks what happened rather
+			// than sending again.
+			wait = transportBackoff(outcomeRetries)
+			outcomeRetries++
+		} else {
 			return Result{}, err
 		}
+
 		if sleepErr := sleep(ctx, wait); sleepErr != nil {
 			// The caller's deadline outranks the gateway's suggestion.
 			return Result{}, errors.Join(err, sleepErr)
@@ -157,7 +170,13 @@ func (c *Client) post(ctx context.Context, rpc call, body []byte, out any) error
 		// transport error is the one outcome where the client does not know
 		// whether the gateway took the message. A listing is safe to repeat,
 		// but repeating it is the caller's decision, as with any other error.
-		return fmt.Errorf("panmail: %s did not complete: %w", rpc.what, err)
+		// The one exception is a send with an idempotency key; see
+		// WithTransportRetries.
+		var redirect *redirectError
+		if errors.As(err, &redirect) {
+			return fmt.Errorf("panmail: %s did not complete: %w", rpc.what, err)
+		}
+		return &unknownOutcomeError{msg: "panmail: " + rpc.what + " did not complete", err: err}
 	}
 	defer func() {
 		// Drain a little so a short remainder still lets the connection be
@@ -174,7 +193,7 @@ func (c *Client) post(ctx context.Context, rpc call, body []byte, out any) error
 	// that fits exactly.
 	payload, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
 	if err != nil {
-		return fmt.Errorf("panmail: reading the response failed: %w", err)
+		return &unknownOutcomeError{msg: "panmail: reading the response failed", err: err}
 	}
 
 	if res.StatusCode != http.StatusOK {
@@ -191,7 +210,12 @@ func (c *Client) post(ctx context.Context, rpc call, body []byte, out any) error
 	// input" would send the reader looking for a malformed body rather than a
 	// long one.
 	if len(payload) > maxResponseBytes {
-		return fmt.Errorf("panmail: the gateway's response exceeded %d bytes", maxResponseBytes)
+		// An unknown outcome as much as a dropped connection: a 200 is the
+		// gateway accepting, and what it accepted is in the part not read.
+		return &unknownOutcomeError{
+			msg: "panmail: the gateway's response was cut short",
+			err: fmt.Errorf("it exceeded %d bytes", maxResponseBytes),
+		}
 	}
 	if err := json.Unmarshal(payload, out); err != nil {
 		return fmt.Errorf("panmail: the gateway's response was not json: %w", err)
@@ -224,11 +248,11 @@ func decodeError(payload []byte, status int) *APIError {
 	return apiErr
 }
 
-// waitBefore reports how long to wait before repeating a refusal, and whether
-// to repeat it at all. Only a rate limit is ever repeated: it is the one
-// failure where the gateway said plainly it did not accept the message.
-func (c *Client) waitBefore(err error, attempt int) (time.Duration, bool) {
-	if attempt >= c.opts.rateLimitRetries {
+// waitOutRateLimit reports how long to wait before repeating a rate-limit
+// refusal, and whether to repeat it at all. It is the one refusal where the
+// gateway said plainly it did not accept the message and when it would.
+func (c *Client) waitOutRateLimit(err error, retried int) (time.Duration, bool) {
+	if retried >= c.opts.rateLimitRetries {
 		return 0, false
 	}
 
@@ -237,6 +261,46 @@ func (c *Client) waitBefore(err error, attempt int) (time.Duration, bool) {
 		return 0, false
 	}
 	return limited.RetryAfter, true
+}
+
+// unknownOutcomeError is a request that did not complete: the client does not
+// know whether the gateway acted on it. Its message is what it always was; the
+// type is what lets a keyed send tell it from a refusal.
+type unknownOutcomeError struct {
+	msg string
+	err error
+}
+
+func (e *unknownOutcomeError) Error() string { return e.msg + ": " + e.err.Error() }
+
+func (e *unknownOutcomeError) Unwrap() error { return e.err }
+
+// unknownOutcome reports whether err leaves the outcome of a send unknown:
+// the request did not complete, or the gateway answered "aborted" — a
+// concurrent send with the same key whose result it could not read yet.
+// Every refusal is a known outcome, and so is a redirect.
+func unknownOutcome(err error) bool {
+	var incomplete *unknownOutcomeError
+	if errors.As(err, &incomplete) {
+		return true
+	}
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Code == codeAborted
+}
+
+// transportBackoff is the wait before the nth repeat of a keyed send whose
+// outcome was unknown: a tenth of a second, doubling, at most two. Short,
+// because the repeat is a question rather than a second attempt at load, and
+// the context bounds the whole of it.
+func transportBackoff(retried int) time.Duration {
+	wait := 100 * time.Millisecond
+	for range retried {
+		wait *= 2
+		if wait >= 2*time.Second {
+			return 2 * time.Second
+		}
+	}
+	return wait
 }
 
 func sleep(ctx context.Context, d time.Duration) error {

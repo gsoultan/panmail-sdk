@@ -45,7 +45,13 @@ ENUMS = [
             "",
             "UNSPECIFIED is here because the proto has it. It is the zero value",
             "protobuf requires, not a state a message is ever in.",
+            "",
+            "\"numbers\" maps each value's number to its name. A webhook's delivery",
+            "event carries the number, because the gateway marshals it with",
+            "encoding/json rather than protojson; the clients turn it back into a",
+            "name with a table of their own, checked against this.",
         ],
+        "numbers": True,
     },
     {
         "proto": "webhook.proto",
@@ -112,9 +118,10 @@ def main() -> int:
 
         # Digits too: PROVIDER_TYPE_POP3 has one, and a pattern without them
         # skips that value in silence rather than failing.
-        values = re.findall(
-            r"^\s*(" + spec["prefix"] + r"[A-Z0-9_]+)\s*=\s*\d+;", match.group(1), re.M
+        numbered = re.findall(
+            r"^\s*(" + spec["prefix"] + r"[A-Z0-9_]+)\s*=\s*(\d+);", match.group(1), re.M
         )
+        values = [name for name, _ in numbered]
         if not values:
             print(f"{spec['enum']} in {proto} has no values", file=sys.stderr)
             return 1
@@ -124,6 +131,10 @@ def main() -> int:
         fixture["constants"] = collections.OrderedDict(
             (name[len(spec["prefix"]):], name) for name in values
         )
+        if spec.get("numbers"):
+            fixture["numbers"] = collections.OrderedDict(
+                (number, name) for name, number in numbered
+            )
 
         out = ROOT / "testdata" / spec["fixture"]
         out.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")

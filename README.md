@@ -5,7 +5,8 @@ gateway, in Go and PHP.
 
 Both are the same small library in two languages: **one call to send** and one
 to list what you can send through, typed refusals you can act on, and a
-deliberate refusal to retry anything whose outcome is unknown. None of them depends on the gateway's source — they speak
+deliberate refusal to retry anything whose outcome is unknown unless an
+idempotency key makes that safe. None of them depends on the gateway's source — they speak
 [the wire contract](docs/WIRE.md), which is also what you want if you would
 rather POST JSON yourself or send over SMTP.
 
@@ -105,6 +106,7 @@ them is whether the gateway attached a delay.
 | Over the send rate | `*RateLimitedError` | `RateLimitedException` |
 | Backlog full | `*BacklogFullError` | `BacklogFullException` |
 | Recipient suppressed | `*SuppressedRecipientError` | `SuppressedRecipientException` |
+| Idempotency key reused for another message | `*IdempotencyKeyConflictError` | `IdempotencyKeyConflictException` |
 | Key rejected | `*AuthError` | `AuthException` |
 | Anything else | `*APIError` | `ApiException` |
 
@@ -117,13 +119,13 @@ queued. Slow down, or stop.
 
 ## Retries
 
-**These clients do not retry a send whose outcome they do not know.** Sending is
-not idempotent and the gateway has no de-duplication key, so a retry after a
-timeout or a dropped connection is a retry of a message that may already be on
-its way to the recipient.
+**These clients do not retry a send whose outcome they do not know** — unless
+you give it an idempotency key and ask. Without a key, a retry after a timeout
+or a dropped connection is a retry of a message that may already be on its way
+to the recipient.
 
-The one exception is a *refusal* — the gateway said plainly it did not accept
-the message — which every SDK will wait out if you ask:
+A *refusal* — the gateway said plainly it did not accept the message — is
+different, and the clients will wait out a rate limit if you ask:
 
 ```go
 panmail.New(url, key, panmail.WithRateLimitRetries(3))                  // Go
@@ -133,6 +135,44 @@ new Client($url, $key, ['rateLimitRetries' => 3]);                      // PHP
 It is off by default because it makes `send` block for as long as the gateway
 asks, which inside a request handler is a decision you should make rather than
 inherit. A queue of your own is usually the better answer.
+
+### Idempotency keys
+
+A key makes a repeated send safe. The gateway remembers it for 24 hours with
+the message it accepted, and answers the same key and the same request with
+that message instead of queueing another:
+
+```go
+client, _ := panmail.New(url, key, panmail.WithTransportRetries(3))
+result, err := client.Send(ctx, panmail.Message{
+    // ...
+    IdempotencyKey: "order-1042/receipt",
+})
+```
+
+```php
+$client = new Client($url, $key, ['transportRetries' => 3]);
+$result = $client->send(new Message(
+    // ...
+    idempotencyKey: 'order-1042/receipt',
+));
+```
+
+Name **what is being sent**, not the attempt — an order id and the kind of
+mail — so a retry from anywhere carries the same key. At most 255 printable
+ASCII characters. The same key with a *different* message is refused with
+`IdempotencyKeyConflictError` / `IdempotencyKeyConflictException`, and nothing
+is sent.
+
+`WithTransportRetries` / `transportRetries` repeats a keyed send whose outcome
+is unknown — a dropped connection, a timeout, or the gateway's `aborted` for a
+concurrent send with the same key — up to `n` times, waiting 0.1 s doubling to
+2 s between them. In Go the context's deadline ends it. A send without a key is
+never repeated this way, whatever the option says.
+
+**Turn it on only against a gateway that supports keys.** One that predates
+them ignores the field rather than refusing it, and nothing in its answer says
+so; retrying there sends duplicates.
 
 ## Listing providers
 
@@ -170,6 +210,64 @@ gateway treats a type name it does not recognise as no filter at all.
 gateway, credentials excepted. If you only need the ids while setting an
 application up, a second key for that job keeps your sending key as narrow as
 it was.
+
+## What happened to a message
+
+A message's delivery history, for a key that also holds the **`events:read`**
+scope — which no key gets by default:
+
+```go
+events, err := client.MessageEvents(ctx, result.MessageID)
+for _, e := range events {
+    log.Println(e.Timestamp, e.Recipient, e.Type, e.Reason)
+}
+```
+
+```php
+foreach ($client->messageEvents($result->messageId) as $event) {
+    echo "{$event->recipient} {$event->type} {$event->reason}", PHP_EOL;
+}
+```
+
+One call returns every event the gateway has recorded for the message, for
+every recipient, oldest first; the latest per recipient is where that copy
+stands. An unknown id is an empty list. Each event carries its id, the message
+id, its type (a `Status` constant), the recipient, the time, the provider and
+the gateway's reason where there is one — not the subject, and not the
+provider's free-form metadata.
+
+`events:read` reads every message's history in the tenant, recipients
+included. A second key for the job that needs it keeps your sending key as
+narrow as it was.
+
+## Suppressions
+
+A send to an address on the tenant's suppression list is refused whole, with
+`SuppressedRecipientError` / `SuppressedRecipientException`. Look one up with a
+key that holds **`suppressions:read`**, and lift it with one that holds
+**`suppressions:write`** — neither is granted by default:
+
+```go
+check, err := client.CheckSuppression(ctx, "bounced@example.net")
+if err == nil && check.Suppressed {
+    log.Println("suppressed:", check.Reason)
+    // err = client.RemoveSuppression(ctx, "bounced@example.net")
+}
+```
+
+```php
+$check = $client->checkSuppression('bounced@example.net');
+if ($check->suppressed) {
+    echo "suppressed: {$check->reason}", PHP_EOL;
+    // $client->removeSuppression('bounced@example.net');
+}
+```
+
+The gateway compares mailboxes, not strings, so `Alice <Alice@Example.COM>`
+finds `alice@example.com`. Removing an address that is not on the list
+succeeds, so a removal is safe to repeat. The address was usually suppressed by
+a hard bounce or a complaint: mailing it again before that has changed is how
+a sending reputation is spent.
 
 ## Not using an SDK
 
@@ -213,6 +311,38 @@ case panmail.TriggerEventMailExpired:
 
 `event.deliveryId` is stable across retries, and the gateway does retry: store
 it and ignore a repeat, or a bounce will suppress an address more than once.
+
+To have the data decoded as well, parse instead of verifying — same checks,
+then a typed payload chosen by the event:
+
+```go
+parsed, err := panmail.ParseWebhook(secret, r.Header, body)
+if err != nil {
+    http.Error(w, "", http.StatusUnauthorized)
+    return
+}
+switch p := parsed.Payload.(type) {
+case *panmail.MailEvent:       // sent, delivered, opened, clicked, bounced, rejected
+    log.Println(p.Type, p.Recipient, p.Reason)
+case *panmail.MailHeld:        // p.ReviewID, p.Matched, p.ExpiresAt
+case *panmail.MailHoldOutcome: // released, quarantine-rejected, expired
+case *panmail.InboundMail:     // p.From, p.Subject, p.Text
+case nil:                      // an event this version does not know: parsed.Webhook.Data
+}
+```
+
+```php
+$parsed = Panmail\Webhook::parse($secret, getallheaders(), file_get_contents('php://input'));
+if ($parsed->payload instanceof Panmail\MailEvent) {
+    echo "{$parsed->payload->recipient} {$parsed->payload->type}", PHP_EOL;
+}
+```
+
+An event the client has no type for comes back verified with no payload rather
+than being refused, so a gateway newer than your client does not have its
+deliveries bounced and retried. A known event whose data is not the shape the
+client reads is refused, like a bad signature. `MailEvent.Type` is the precise
+`Status` — `MAIL_BOUNCED` fires for hard and soft bounces alike.
 The full contract is in [`docs/WIRE.md`](docs/WIRE.md).
 
 ## Your API key

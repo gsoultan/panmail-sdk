@@ -53,7 +53,8 @@ The key carries the tenant, so there is nothing else to configure. Create one in
       "contentType": "application/pdf",
       "content": "JVBERi0xLjQ="
     }
-  ]
+  ],
+  "idempotencyKey": "order-1042/receipt"
 }
 ```
 
@@ -66,6 +67,7 @@ The key carries the tenant, so there is nothing else to configure. Create one in
 | `templateId` | Renders a stored template with `templateData` instead of the bodies. Subject comes from the template unless set here. |
 | `templateData` | A plain JSON object (`google.protobuf.Struct` on the wire — JSON and nothing more). |
 | `attachments[].content` | **base64.** It is a protobuf `bytes` field; raw bytes arrive as mojibake. |
+| `idempotencyKey` | Optional. Makes a repeated send safe — see [Idempotency keys](#idempotency-keys). At most 255 printable ASCII characters (`0x20`–`0x7E`). |
 
 Field names are the protobuf JSON names. The gateway also accepts the
 snake_case spellings (`provider_id`, `body_html`), but camelCase is what its own
@@ -116,6 +118,8 @@ Non-200 responses carry a Connect error envelope:
 | `permission_denied` | 403 | Key lacks the `email:send` scope. |
 | `failed_precondition` | 400 | A recipient is on the tenant's suppression list. |
 | `resource_exhausted` | 429 | **Two different things — see below.** |
+| `already_exists` | 409 | The `idempotencyKey` was already used for a different request. |
+| `aborted` | 409 | A concurrent send with the same `idempotencyKey` holds it; ask again. |
 | `unknown` | 500 | Something failed rather than refused. Retry with backoff. |
 
 #### A refusal is not a failure
@@ -129,8 +133,10 @@ cannot move. Only `unknown` means the gateway might succeed if asked again.
 | --- | --- | --- |
 | `invalid_argument` | refusal | Fix the request — the provider or template does not exist, or the template will not render against the data sent. Retrying never helps. |
 | `unauthenticated`, `permission_denied` | refusal | Fix the key or its scopes. |
-| `failed_precondition` | refusal | A recipient is suppressed. The **whole** message is refused, not just that recipient's copy. Remove the address from the send, or lift the suppression. |
+| `failed_precondition` | refusal | A recipient is suppressed. The **whole** message is refused, not just that recipient's copy. Remove the address from the send, or lift the suppression — see [Suppressions](#suppressions). |
 | `resource_exhausted` | refusal | You are asking for more than you may have. The only one with a schedule attached, and only sometimes — see below. |
+| `already_exists` | refusal | The key names a different message. Nothing was sent; choose keys that name what is being sent. |
+| `aborted` | unknown outcome | Only for a keyed send racing another with the same key. Asking again with the same key returns the first message. |
 | `unknown` | failure | Storage, a provider connection. Retry with backoff. |
 
 Suppression is worth calling out because it is the one that reads like a
@@ -177,14 +183,66 @@ so a per-provider rate says nothing about how deep it is.
 
 #### Retrying
 
-**Do not retry a send whose outcome you do not know.** Sending is not
-idempotent and the gateway has no de-duplication key, so a retry after a
-timeout or a dropped connection is a retry of a message that may already be on
-its way to the recipient.
+**Do not retry a send whose outcome you do not know — unless it carries an
+idempotency key.** Without one, a retry after a timeout or a dropped
+connection is a retry of a message that may already be on its way to the
+recipient.
 
 A *refusal* is different — the gateway said plainly it did not accept the
-message — and is safe to repeat. That is the only retry the SDKs perform, and
-only for a rate limit, and only when asked.
+message — and is safe to repeat. The SDKs repeat a rate limit, and only when
+asked; with a key, and only when asked, they also repeat an unknown outcome.
+
+### Idempotency keys
+
+The field is `string idempotency_key = 14` on `SendEmailRequest`, added by
+gsoultan/panmail#72. A gateway older than that ignores it.
+
+```json
+{ "providerId": "…", "from": "…", "to": ["…"], "bodyText": "…",
+  "idempotencyKey": "order-1042/receipt" }
+```
+
+The gateway remembers an accepted key, per tenant, for **24 hours**, together
+with the message it accepted and a hash of the request:
+
+| The same key arrives with… | Answer |
+| --- | --- |
+| the same request | `200`, the **original** `messageId`, status `EMAIL_EVENT_TYPE_PENDING`. Nothing new is queued. |
+| a different request | `already_exists` / 409, `"idempotency key reused with a different request"`. Nothing is sent. |
+| the same request, while the first is still being written | `aborted` / 409. Ask again; you will get the first message. |
+
+Only acceptance is remembered. A refusal — a rate limit, a suppressed
+recipient, an invalid request — stores nothing, so the next attempt with the
+same key is decided afresh.
+
+A key may instead travel in an `Idempotency-Key` header; sent in both places
+and different, it is `invalid_argument`. The SDKs send only the field. Go's
+`net/http` treats a request carrying that header as safe to resend and does so
+by itself after a dropped connection, which would be a retry nobody counted.
+
+Choose a key that names **what is being sent**, not the attempt: an order id
+and the kind of mail, not a random value made per call. A key minted per
+attempt makes every retry a new message.
+
+> **A gateway that predates the key ignores it.** Connect's JSON decoding
+> discards fields it does not know, so an older gateway accepts the send and
+> forgets the key. The request looks the same either way; nothing in the
+> response says the key was honoured. Retrying an unknown outcome is only
+> safe against a gateway known to support keys, which is why the SDKs make it
+> a separate opt-in.
+
+What the SDKs do with a key:
+
+- Send it as `idempotencyKey`, after checking the gateway's own rule (255
+  printable ASCII characters) so a bad key fails before the round trip.
+- Report `already_exists` on a send as its own type —
+  `IdempotencyKeyConflictError`, `IdempotencyKeyConflictException`.
+- With `WithTransportRetries(n)` / `transportRetries`, and only for a keyed
+  send, repeat up to `n` times a send whose outcome is unknown: one that did
+  not complete — a dropped connection, a timeout, a success cut off at the
+  response bound — or was answered `aborted`. Each repeat waits first, 0.1 s
+  doubling to at most 2 s. Go stops at the context's deadline. Every refusal,
+  `unknown` included, is a known outcome and is not repeated this way.
 
 ### cURL
 
@@ -285,9 +343,48 @@ The body is an envelope with the event-specific payload inside it:
   "event": "WEBHOOK_TRIGGER_EVENT_MAIL_BOUNCED",
   "tenant_id": "3f1c2b7a-0000-4000-8000-000000000001",
   "timestamp": 1700000000,
-  "data": { "messageId": "0193b2f1-...", "reason": "mailbox full" }
+  "data": {
+    "id": "0193b2f1-…",
+    "tenant_id": "3f1c2b7a-…",
+    "provider_id": "3f1c2b7a-…",
+    "provider_name": "Production SES",
+    "message_id": "0193b2f1-…",
+    "type": 6,
+    "recipient": "gone@example.org",
+    "subject": "Your receipt",
+    "timestamp": "2026-09-01T10:00:02.123456789Z",
+    "metadata": { "smtp_code": "550" },
+    "error_message": "550 5.1.1 mailbox unknown"
+  }
 }
 ```
+
+### The payloads
+
+The gateway builds the envelope and its `data` with Go's `encoding/json`, not
+protobuf JSON, so the payloads follow the gateway's **Go struct tags** rather
+than the protos: field names are `snake_case`, a delivery event's `type` is
+the `EmailEventType` **number** (`6` is `HARD_BOUNCE`), and an inbound
+message's timestamp is `{"seconds": …, "nanos": …}`. None of this is in a
+proto, so the drift check cannot see it change.
+[`testdata/webhook-payloads.json`](../testdata/webhook-payloads.json) holds
+one body of each shape, byte for byte as the gateway built it.
+
+| Events | `data` | Fields |
+| --- | --- | --- |
+| `MAIL_SENT`, `MAIL_DELIVERED`, `MAIL_OPENED`, `MAIL_CLICKED`, `MAIL_BOUNCED`, `MAIL_REJECTED` | a delivery event | `id`, `tenant_id`, `provider_id`, `provider_name`, `message_id`, `type` (number), `recipient`, `subject`, `timestamp` (RFC 3339), `metadata` (object or `null`), `error_message` |
+| `MAIL_HELD` | a hold | `id` (the review-queue id), `direction` (`outbound`/`inbound`), `message_id`¹, `rule_id`¹, `rule_name`, `from`, `recipients`, `subject`, `size_bytes`, `attachment_count`, `attachment_names`¹, `matched` (`field`, `operator`, `values`¹, `header`¹, `number`¹), `held_at`, `expires_at`¹ |
+| `MAIL_RELEASED`, `MAIL_QUARANTINE_REJECTED`, `MAIL_EXPIRED` | how a hold ended | `id`, `direction`, `message_id`¹, `rule_id`¹, `rule_name`, `from`, `recipients`, `subject`, `held_at`, `decided_at`, `reviewed_by`¹, `note`¹ — no reviewer on an expiry |
+| `MAIL_INBOUND` | an inbound message | `id`¹, `tenant_id`¹, `from`¹, `to`¹, `subject`¹, `body_html`¹, `body_text`¹, `timestamp` (`{seconds, nanos}`)¹, `headers`¹ |
+
+¹ Left out when empty.
+
+The trigger is coarser than the event: `MAIL_BOUNCED` fires for `BOUNCED`,
+`HARD_BOUNCE` and `SOFT_BOUNCE`, and `MAIL_REJECTED` for `REJECTED` and
+`DROPPED`. Read `type` for which.
+
+A hold and its outcome carry no body and no attachment content. An inbound
+message carries both bodies.
 
 ### The event vocabulary
 
@@ -362,6 +459,31 @@ $event = Panmail\Webhook::verify($secret, getallheaders(), file_get_contents('ph
 
 [`testdata/webhook-signatures.json`](../testdata/webhook-signatures.json) holds
 known-good vectors if you are implementing this yourself.
+
+### Typed payloads
+
+`ParseWebhook` in Go and `Webhook::parse` in PHP verify exactly as above, then
+decode `data` by the event: `MailEvent`, `MailHeld`, `MailHoldOutcome` or
+`InboundMail`. A delivery event's `type` number comes back as its `Status`
+name, and an inbound timestamp is read in either form.
+
+- **An event they have no type for is not refused.** It comes back verified,
+  with no payload and the raw data alongside. The gateway adds events, and a
+  receiver that refuses one gets it retried until the gateway gives up.
+- **A known event whose data is the wrong shape is refused** with the webhook
+  error, naming the event. It was signed, so it is the format moving, not an
+  attack — but a payload decoded halfway hands back zero values nobody can
+  tell from real ones. A field may be absent or `null`; one that is present
+  must be the type the gateway writes.
+
+```go
+parsed, err := panmail.ParseWebhook(secret, r.Header, body)
+if bounce, ok := parsed.Payload.(*panmail.MailEvent); ok && bounce.Type == panmail.StatusHardBounce { … }
+```
+```php
+$parsed = Panmail\Webhook::parse($secret, getallheaders(), file_get_contents('php://input'));
+if ($parsed->payload instanceof Panmail\MailEvent && $parsed->payload->type === Panmail\Status::HARD_BOUNCE) { … }
+```
 
 ### Retries, and why you need the delivery id
 
@@ -482,9 +604,133 @@ call, because providers are configuration rather than a feed:
 
 ---
 
+## Reading a message's events
+
+What became of a message is on the same door as sending it.
+
+### The request
+
+```
+POST https://mail.example.com/panmail.v1.EventService/ListEvents
+Content-Type: application/json
+X-API-Key: <your key>
+```
+
+The key needs the **`events:read`** scope, which no key gets by default; a
+sending key is refused with `permission_denied`. `events:read` reads every
+message's delivery history in the tenant, recipients included.
+
+```json
+{ "pageSize": 100, "messageId": "0193b2f1-...", "pageToken": "…" }
+```
+
+| Field | Notes |
+| --- | --- |
+| `messageId` | The id a send returned. **An empty or absent one is no filter**: the answer is every event in the tenant. |
+| `pageSize` | Zero or absent is 50. The PostgreSQL store caps it at 500. |
+| `pageToken` | The previous page's `nextPageToken`. Opaque, and not the same shape on the two stores. |
+
+`ListEventsRequest` also filters by recipient, type, subject and time, and
+`latestOnly` keeps the newest event per message and recipient. The SDKs use
+`messageId` alone.
+
+### The response
+
+```json
+{
+  "events": [
+    {
+      "id": "…",
+      "tenantId": "…",
+      "providerId": "3f1c2b7a-…",
+      "providerName": "Production SES",
+      "messageId": "0193b2f1-...",
+      "type": "EMAIL_EVENT_TYPE_HARD_BOUNCE",
+      "recipient": "gone@example.org",
+      "subject": "Your receipt",
+      "timestamp": "2026-09-01T10:00:02.123456789Z",
+      "metadata": { "…": "…" },
+      "errorMessage": "550 5.1.1 mailbox unknown"
+    }
+  ],
+  "nextPageToken": "…"
+}
+```
+
+One event per thing that happened, per recipient. `type` is an
+`EmailEventType` name — or a bare number for a value the enum has no name for,
+as with provider types. `timestamp` is RFC 3339 with up to nine fractional
+digits. `errorMessage` is the provider's or the gateway's explanation, where
+there is one.
+
+**The order depends on the store.** PostgreSQL answers newest first; the Pebble
+store groups by recipient, newest first within each. An unknown `messageId` is
+an empty list, not an error.
+
+### What the SDKs add
+
+`MessageEvents` in Go and `messageEvents` in PHP return a message's whole
+history from one call:
+
+- An empty message id is refused before anything is sent.
+- Pages of 100, followed to the end, each event returned once, **sorted oldest
+  first** — the gateway's order kept between events in the same instant.
+- A page token seen twice, or more than 50 pages — 5,000 events for one
+  message — is an error rather than a history.
+- `id`, `messageId`, `type`, `recipient`, `timestamp`, `providerId` and
+  `errorMessage` (as `Reason` / `reason`) are decoded; the subject, provider
+  name, tenant and `metadata` are not. The metadata is a provider's own
+  vocabulary, with no shape the gateway promises.
+- No retries. Reading changes nothing, so calling again is always safe.
+
+---
+
+## Suppressions
+
+The list that turns a send into `failed_precondition`. Two procedures on it
+are worth a sender's while: is this address on it, and take it off.
+
+```
+POST https://mail.example.com/panmail.v1.SuppressionService/CheckSuppression
+POST https://mail.example.com/panmail.v1.SuppressionService/RemoveSuppression
+Content-Type: application/json
+X-API-Key: <your key>
+```
+
+Both take the address and nothing else:
+
+```json
+{ "email": "Bounced <bounced@example.net>" }
+```
+
+| Procedure | Scope | Answer |
+| --- | --- | --- |
+| `CheckSuppression` | **`suppressions:read`** | `{ "isSuppressed": true, "reason": "hard bounce" }`, or `{}` for an address not on the list — protobuf JSON leaves `false` and `""` out. |
+| `RemoveSuppression` | **`suppressions:write`** | `{}`. Removing an address that is not on the list succeeds too, so a removal is safe to repeat. |
+
+No key has either scope by default. `suppressions:write` also lets a key add
+and import suppressions.
+
+The gateway compares **mailboxes, not strings**: it reduces an address to its
+bare lowercased form before it looks, so `Alice <Alice@Example.COM>` and
+`alice@example.com` are one entry. An empty address is answered "not
+suppressed" by the check and refused with `invalid_argument` by the removal;
+the SDKs refuse it before sending.
+
+A removal is not undone by anything but the next bounce or complaint, and the
+address was usually put there by one. Mailing it again without that reason
+having gone away is how a sending reputation is spent: check the reason first.
+
+The SDKs: `CheckSuppression` / `checkSuppression` and `RemoveSuppression` /
+`removeSuppression`. Neither retries. A `failed_precondition` here is a plain
+refusal, not a suppressed recipient.
+
+---
+
 ## Generating your own client
 
 The protos are published in [`../proto`](../proto), copied verbatim from the
-gateway: the import closures of `SendEmail` and `ListEmailProviders`, and the
-webhook vocabulary. You do not need them to use an SDK or to POST JSON — they
+gateway: the import closures of `SendEmail`, `ListEmailProviders`,
+`ListEvents`, `CheckSuppression` and `RemoveSuppression`, and the webhook
+vocabulary. You do not need them to use an SDK or to POST JSON — they
 are there for the case where you would rather generate a client than write one.

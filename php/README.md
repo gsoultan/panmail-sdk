@@ -50,9 +50,35 @@ foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
 One call returns the whole list, following the gateway's pages for you. Each
 provider carries its id, name, type and allowed From domains, and nothing else.
 
-**Retries are off by default and never applied to an unknown outcome.** Pass
-`['rateLimitRetries' => n]` to wait out rate-limit refusals — the one failure
-where the gateway said plainly it did not accept the message.
+**A message's delivery events can be read** with a key that also holds
+`events:read`, oldest first, every recipient:
+
+```php
+foreach ($client->messageEvents($result->messageId) as $event) {
+    echo "{$event->recipient} {$event->type}", PHP_EOL;
+}
+```
+
+**A suppression can be looked up and lifted** — `checkSuppression()` with
+`suppressions:read`, `removeSuppression()` with `suppressions:write`:
+
+```php
+if ($client->checkSuppression('bounced@example.net')->suppressed) {
+    $client->removeSuppression('bounced@example.net');
+}
+```
+
+**Webhooks are verified and decoded** with `Webhook::parse()`, which returns
+the envelope and a typed payload — `MailEvent`, `MailHeld`, `MailHoldOutcome`
+or `InboundMail` — or no payload for an event this version does not know.
+
+**Retries are off by default, and an unknown outcome is never repeated without
+an idempotency key.** Pass `['rateLimitRetries' => n]` to wait out rate-limit
+refusals — where the gateway said plainly it did not accept the message. Give
+a message an `idempotencyKey` and pass `['transportRetries' => n]` to repeat a
+send that did not complete: the gateway answers the same key with the message
+it already accepted. Only against a gateway that supports keys — an older one
+ignores the field, and retrying there sends duplicates.
 
 Bring your own HTTP stack by passing `['transport' => $yourTransport]`, any
 implementation of `Panmail\Transport\Transport`.

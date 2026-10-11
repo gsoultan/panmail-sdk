@@ -1,9 +1,10 @@
 # Proto
 
 The wire contract, copied **verbatim** from the gateway so the two cannot
-drift: the import closures of the two procedures the SDKs call,
-`EmailService.SendEmail` and `EmailProviderService.ListEmailProviders`, and the
-webhook vocabulary.
+drift: the import closures of the procedures the SDKs call —
+`EmailService.SendEmail`, `EmailProviderService.ListEmailProviders`,
+`EventService.ListEvents` and two of `SuppressionService` — and the webhook
+vocabulary.
 
 | File | Why it is here |
 | --- | --- |
@@ -14,6 +15,9 @@ webhook vocabulary.
 | `email_provider_service.proto` | `ListEmailProvidersRequest`, `ListEmailProvidersResponse` — and, because the file is copied whole, the rest of `EmailProviderService`, which the SDKs never call |
 | `email_provider.proto` | `EmailProvider` and its vendor configurations |
 | `provider_type.proto` | `ProviderType` |
+| `event_service.proto` | `ListEventsRequest`, `ListEventsResponse` — and the rest of `EventService`, which the SDKs never call |
+| `suppression_service.proto` | `CheckSuppression` and `RemoveSuppression`'s messages — and add, import and list, which the SDKs never call |
+| `suppression.proto` | `Suppression`, which the service file imports |
 
 You do **not** need these to use the SDKs — they speak the protocol already.
 They are here for the case the SDKs do not cover: generating your own client,
