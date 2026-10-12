@@ -21,19 +21,31 @@ final class Attachment
          * inline, so set it when you know it.
          */
         public readonly ?string $contentType = null,
+
+        /**
+         * Makes the attachment an inline part the HTML body refers to as
+         * cid:<contentId> — an embedded image or a signature logo. Without
+         * the angle brackets. Empty means an ordinary attachment.
+         */
+        public readonly string $contentId = '',
     ) {
     }
 
     /** @return array<string, string> */
     public function toArray(): array
     {
-        return [
+        $wire = [
             'filename' => $this->filename,
             'contentType' => $this->contentType ?? $this->guessContentType(),
             // A bytes field is base64 in protobuf JSON, which is what the
             // gateway decodes. Raw bytes would arrive as mojibake.
             'content' => base64_encode($this->content),
         ];
+        if ($this->contentId !== '') {
+            $wire['contentId'] = $this->contentId;
+        }
+
+        return $wire;
     }
 
     private function guessContentType(): string

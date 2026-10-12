@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Message is the mail to send.
@@ -38,6 +39,30 @@ type Message struct {
 
 	Attachments []Attachment
 
+	// ReplyTo is where replies should go, when that is not From — a support
+	// queue answering mail sent from a no-reply address, say.
+	ReplyTo string
+
+	// InReplyTo and References thread this message with an earlier one in the
+	// recipient's client. InReplyTo is the Message-ID of the message being
+	// answered; References is the conversation's Message-IDs so far, oldest
+	// first. Each is a full Message-ID, angle brackets included:
+	// <id@example.com>. At most 100 references; when they do not all fit on
+	// one header line the gateway keeps the first and the most recent, as RFC
+	// 5322 describes.
+	InReplyTo  string
+	References []string
+
+	// ReadReceiptTo asks for a read receipt, sent to this address. It goes out
+	// as the Disposition-Notification-To header, and the recipient's client
+	// decides whether to honour it — most ask the reader, many never send one.
+	ReadReceiptTo string
+
+	// SaveSentCopy files a copy of the message, as sent, in the sender's Sent
+	// folder, the way the tenant's Sent copies setting says to. It does
+	// nothing when that setting is off.
+	SaveSentCopy bool
+
 	// IdempotencyKey makes a repeated send safe. The gateway remembers the key
 	// for 24 hours alongside the message it accepted, and answers the same key
 	// with the same request by returning that message rather than queueing
@@ -60,6 +85,13 @@ type Message struct {
 // printable ASCII, so bytes and characters are the same count.
 const maxIdempotencyKeyLength = 255
 
+// maxMessageIDLength and maxReferences are the gateway's bounds on a
+// Message-ID and on how many References a message may carry.
+const (
+	maxMessageIDLength = 255
+	maxReferences      = 100
+)
+
 // ErrNoRecipients reports a message addressed to nobody.
 var ErrNoRecipients = errors.New("panmail: at least one recipient is required")
 
@@ -80,6 +112,12 @@ type sendRequest struct {
 	TemplateID   string           `json:"templateId,omitempty"`
 	TemplateData map[string]any   `json:"templateData,omitempty"`
 	Attachments  []attachmentJSON `json:"attachments,omitempty"`
+
+	ReplyTo                   string   `json:"replyTo,omitempty"`
+	InReplyTo                 string   `json:"inReplyTo,omitempty"`
+	References                []string `json:"references,omitempty"`
+	DispositionNotificationTo string   `json:"dispositionNotificationTo,omitempty"`
+	SaveSentCopy              bool     `json:"saveSentCopy,omitempty"`
 
 	// IdempotencyKey travels in the body, never as the Idempotency-Key header
 	// the gateway also accepts. Go's http.Transport treats a request carrying
@@ -111,6 +149,9 @@ func (m Message) request() (*sendRequest, error) {
 	if err := validateIdempotencyKey(m.IdempotencyKey); err != nil {
 		return nil, err
 	}
+	if err := validateThreading(m.InReplyTo, m.References); err != nil {
+		return nil, err
+	}
 
 	req := &sendRequest{
 		ProviderID:     m.ProviderID,
@@ -124,6 +165,12 @@ func (m Message) request() (*sendRequest, error) {
 		TemplateID:     m.TemplateID,
 		TemplateData:   m.TemplateData,
 		IdempotencyKey: m.IdempotencyKey,
+
+		ReplyTo:                   m.ReplyTo,
+		InReplyTo:                 m.InReplyTo,
+		References:                m.References,
+		DispositionNotificationTo: m.ReadReceiptTo,
+		SaveSentCopy:              m.SaveSentCopy,
 	}
 
 	if len(m.TemplateData) > 0 {
@@ -141,6 +188,9 @@ func (m Message) request() (*sendRequest, error) {
 		if attachment.Filename == "" {
 			return nil, errors.New("panmail: every attachment needs a filename")
 		}
+		if err := validateContentID(attachment.ContentID); err != nil {
+			return nil, fmt.Errorf("panmail: attachment %q: %w", attachment.Filename, err)
+		}
 		req.Attachments = append(req.Attachments, attachment.wire())
 	}
 
@@ -157,6 +207,62 @@ func validateIdempotencyKey(key string) error {
 	for i := 0; i < len(key); i++ {
 		if c := key[i]; c < 0x20 || c > 0x7e {
 			return fmt.Errorf("panmail: the idempotency key may contain only printable ASCII; byte %d is not", i)
+		}
+	}
+	return nil
+}
+
+// validateThreading applies the gateway's rules for In-Reply-To and
+// References. The addresses — ReplyTo, ReadReceiptTo — are left to the
+// gateway, as From and the recipients are: its parser is the one that counts.
+func validateThreading(inReplyTo string, references []string) error {
+	if inReplyTo != "" {
+		if err := validateMessageID(inReplyTo); err != nil {
+			return fmt.Errorf("panmail: in-reply-to: %w", err)
+		}
+	}
+	if len(references) > maxReferences {
+		return fmt.Errorf("panmail: %d references; the limit is %d", len(references), maxReferences)
+	}
+	for _, id := range references {
+		if err := validateMessageID(id); err != nil {
+			return fmt.Errorf("panmail: references: %w", err)
+		}
+	}
+	return nil
+}
+
+// validateMessageID checks the shape RFC 5322 gives a msg-id, <left@right> in
+// printable ASCII without spaces — the same check the gateway makes.
+func validateMessageID(id string) error {
+	if len(id) > maxMessageIDLength {
+		return fmt.Errorf("the Message-ID is %d characters long; the limit is %d", len(id), maxMessageIDLength)
+	}
+	if len(id) < 5 || id[0] != '<' || id[len(id)-1] != '>' {
+		return fmt.Errorf("the Message-ID %q must be in angle brackets, like <id@example.com>", id)
+	}
+	inner := id[1 : len(id)-1]
+	for i := 0; i < len(inner); i++ {
+		if c := inner[i]; c <= ' ' || c > '~' || c == '<' || c == '>' {
+			return fmt.Errorf("the Message-ID %q may contain only printable ASCII without spaces", id)
+		}
+	}
+	if at := strings.IndexByte(inner, '@'); at <= 0 || at == len(inner)-1 {
+		return fmt.Errorf("the Message-ID %q must have the form <left@right>", id)
+	}
+	return nil
+}
+
+// validateContentID applies the gateway's rule for an inline attachment's
+// Content-ID: one token of printable ASCII, without the angle brackets the
+// header adds.
+func validateContentID(id string) error {
+	if len(id) > maxMessageIDLength {
+		return fmt.Errorf("content id is %d characters long; the limit is %d", len(id), maxMessageIDLength)
+	}
+	for i := 0; i < len(id); i++ {
+		if c := id[i]; c <= ' ' || c > '~' || c == '<' || c == '>' {
+			return errors.New("content id may contain only printable ASCII without spaces or angle brackets")
 		}
 	}
 	return nil
