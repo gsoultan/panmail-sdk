@@ -8,7 +8,22 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Replies, read receipts, Sent copies and inline images** — on `Message`,
+  `ReplyTo`, `InReplyTo`, `References`, `ReadReceiptTo` and `SaveSentCopy` in
+  Go, and the `replyTo`, `inReplyTo`, `references`, `readReceiptTo` and
+  `saveSentCopy` arguments in PHP; on `Attachment`, `ContentID` / `contentId`.
+  They are the `reply_to`, `in_reply_to`, `references`,
+  `disposition_notification_to` and `save_sent_copy` fields of
+  `SendEmailRequest` and `Attachment.content_id`, which the gateway added in
+  gsoultan/panmail#74 and #75. Message-IDs and content ids are checked against
+  the gateway's rules before a send. A gateway that predates them ignores the
+  fields.
+
+### Changed
+
+- `proto/` is re-synced with the gateway and carries the new fields.
 
 ## [0.1.0] — 2026-10-10
 
