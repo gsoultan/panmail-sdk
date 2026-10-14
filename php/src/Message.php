@@ -20,6 +20,10 @@ final class Message
      */
     private const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
+    /** The gateway's bounds on a Message-ID and on how many References a message may carry. */
+    private const MAX_MESSAGE_ID_LENGTH = 255;
+    private const MAX_REFERENCES = 100;
+
     /**
      * @param string             $providerId   The configured sending provider, as shown on the
      *                                         Email Providers page. Required: panmail will not
@@ -53,6 +57,23 @@ final class Message
      *                                         printable ASCII characters. Setting it is what
      *                                         lets the transportRetries option repeat a send
      *                                         whose outcome is unknown.
+     * @param string             $replyTo      Where replies should go, when that is not $from — a
+     *                                         support queue answering mail sent from a no-reply
+     *                                         address, say.
+     * @param string             $inReplyTo    The Message-ID of the message this one answers, angle
+     *                                         brackets included (<id@example.com>), so the
+     *                                         recipient's client threads the two.
+     * @param array<string>      $references   The conversation's Message-IDs so far, oldest first,
+     *                                         angle brackets included. At most 100; when they do
+     *                                         not all fit on one header line the gateway keeps the
+     *                                         first and the most recent, as RFC 5322 describes.
+     * @param string             $readReceiptTo Asks for a read receipt, sent to this address. It
+     *                                         goes out as the Disposition-Notification-To header,
+     *                                         and the recipient's client decides whether to honour
+     *                                         it.
+     * @param bool               $saveSentCopy Files a copy of the message, as sent, in the sender's
+     *                                         Sent folder, the way the tenant's Sent copies setting
+     *                                         says to. Does nothing when that setting is off.
      */
     public function __construct(
         public readonly string $providerId,
@@ -67,6 +88,11 @@ final class Message
         public readonly array $templateData = [],
         public readonly array $attachments = [],
         public readonly string $idempotencyKey = '',
+        public readonly string $replyTo = '',
+        public readonly string $inReplyTo = '',
+        public readonly array $references = [],
+        public readonly string $readReceiptTo = '',
+        public readonly bool $saveSentCopy = false,
     ) {
     }
 
@@ -99,6 +125,7 @@ final class Message
         }
 
         self::validateIdempotencyKey($this->idempotencyKey);
+        self::validateThreading($this->inReplyTo, $this->references);
 
         $payload = [
             'providerId' => $this->providerId,
@@ -136,6 +163,7 @@ final class Message
             if ($attachment->filename === '') {
                 throw new InvalidMessageException('panmail: every attachment needs a filename');
             }
+            self::validateContentId($attachment->filename, $attachment->contentId);
             $payload['attachments'][] = $attachment->toArray();
         }
 
@@ -143,6 +171,22 @@ final class Message
         // accepts: one place for it, and the same request the Go client sends.
         if ($this->idempotencyKey !== '') {
             $payload['idempotencyKey'] = $this->idempotencyKey;
+        }
+
+        if ($this->replyTo !== '') {
+            $payload['replyTo'] = $this->replyTo;
+        }
+        if ($this->inReplyTo !== '') {
+            $payload['inReplyTo'] = $this->inReplyTo;
+        }
+        if ($this->references !== []) {
+            $payload['references'] = array_values($this->references);
+        }
+        if ($this->readReceiptTo !== '') {
+            $payload['dispositionNotificationTo'] = $this->readReceiptTo;
+        }
+        if ($this->saveSentCopy) {
+            $payload['saveSentCopy'] = true;
         }
 
         return $payload;
@@ -166,6 +210,78 @@ final class Message
             throw new InvalidMessageException(
                 'panmail: the idempotency key may contain only printable ASCII; byte '
                 . $match[0][1] . ' is not'
+            );
+        }
+    }
+
+    /**
+     * The gateway's rules for In-Reply-To and References. The addresses —
+     * replyTo, readReceiptTo — are left to the gateway, as from and the
+     * recipients are: its parser is the one that counts.
+     *
+     * @param array<string> $references
+     *
+     * @throws InvalidMessageException
+     */
+    private static function validateThreading(string $inReplyTo, array $references): void
+    {
+        if ($inReplyTo !== '') {
+            self::validateMessageId('in-reply-to', $inReplyTo);
+        }
+        if (count($references) > self::MAX_REFERENCES) {
+            throw new InvalidMessageException(
+                'panmail: ' . count($references) . ' references; the limit is ' . self::MAX_REFERENCES
+            );
+        }
+        foreach ($references as $id) {
+            self::validateMessageId('references', $id);
+        }
+    }
+
+    /**
+     * The shape RFC 5322 gives a msg-id, <left@right> in printable ASCII
+     * without spaces — the same check the gateway makes.
+     *
+     * @throws InvalidMessageException
+     */
+    private static function validateMessageId(string $field, string $id): void
+    {
+        $problem = null;
+        $inner = substr($id, 1, -1);
+        $at = strpos($inner, '@');
+        if (strlen($id) > self::MAX_MESSAGE_ID_LENGTH) {
+            $problem = 'the Message-ID is ' . strlen($id) . ' characters long; the limit is '
+                . self::MAX_MESSAGE_ID_LENGTH;
+        } elseif (strlen($id) < 5 || $id[0] !== '<' || $id[strlen($id) - 1] !== '>') {
+            $problem = 'the Message-ID "' . $id . '" must be in angle brackets, like <id@example.com>';
+        } elseif (preg_match('/[^\x21-\x7e]|[<>]/', $inner) === 1) {
+            $problem = 'the Message-ID "' . $id . '" may contain only printable ASCII without spaces';
+        } elseif ($at === false || $at === 0 || $at === strlen($inner) - 1) {
+            $problem = 'the Message-ID "' . $id . '" must have the form <left@right>';
+        }
+        if ($problem !== null) {
+            throw new InvalidMessageException('panmail: ' . $field . ': ' . $problem);
+        }
+    }
+
+    /**
+     * The gateway's rule for an inline attachment's Content-ID: one token of
+     * printable ASCII, without the angle brackets the header adds.
+     *
+     * @throws InvalidMessageException
+     */
+    private static function validateContentId(string $filename, string $id): void
+    {
+        if (strlen($id) > self::MAX_MESSAGE_ID_LENGTH) {
+            throw new InvalidMessageException(
+                'panmail: attachment "' . $filename . '": content id is ' . strlen($id)
+                . ' characters long; the limit is ' . self::MAX_MESSAGE_ID_LENGTH
+            );
+        }
+        if (preg_match('/[^\x21-\x7e]|[<>]/', $id) === 1) {
+            throw new InvalidMessageException(
+                'panmail: attachment "' . $filename
+                . '": content id may contain only printable ASCII without spaces or angle brackets'
             );
         }
     }

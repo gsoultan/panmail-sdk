@@ -54,7 +54,12 @@ The key carries the tenant, so there is nothing else to configure. Create one in
       "content": "JVBERi0xLjQ="
     }
   ],
-  "idempotencyKey": "order-1042/receipt"
+  "idempotencyKey": "order-1042/receipt",
+  "replyTo": "",
+  "inReplyTo": "",
+  "references": [],
+  "dispositionNotificationTo": "",
+  "saveSentCopy": false
 }
 ```
 
@@ -67,11 +72,20 @@ The key carries the tenant, so there is nothing else to configure. Create one in
 | `templateId` | Renders a stored template with `templateData` instead of the bodies. Subject comes from the template unless set here. |
 | `templateData` | A plain JSON object (`google.protobuf.Struct` on the wire — JSON and nothing more). |
 | `attachments[].content` | **base64.** It is a protobuf `bytes` field; raw bytes arrive as mojibake. |
+| `attachments[].contentId` | Optional. Makes the attachment an inline part the HTML refers to as `cid:<contentId>`. Without angle brackets; printable ASCII, no spaces, at most 255 characters. |
+| `replyTo` | Optional. Where replies go, when not `from`. |
+| `inReplyTo` / `references` | Optional. Thread this message with earlier ones: the Message-ID being answered, and the conversation's Message-IDs oldest first. Each is `<left@right>` with the angle brackets, printable ASCII, at most 255 characters; at most 100 references. When they do not fit one header line the gateway keeps the first and the most recent. |
+| `dispositionNotificationTo` | Optional. Asks for a read receipt at this address; the recipient's client decides whether to send one. |
+| `saveSentCopy` | Optional. Files a copy in the sender's Sent folder as the tenant's Sent copies setting says; ignored when that is off. SMTP submission sets it. |
 | `idempotencyKey` | Optional. Makes a repeated send safe — see [Idempotency keys](#idempotency-keys). At most 255 printable ASCII characters (`0x20`–`0x7E`). |
 
 Field names are the protobuf JSON names. The gateway also accepts the
 snake_case spellings (`provider_id`, `body_html`), but camelCase is what its own
 web UI sends and so the better-travelled path.
+
+The reply, threading, read-receipt, Sent-copy and `contentId` fields arrived
+after gateway v2.0.0 (gsoultan/panmail#74 and #75). An older gateway discards
+them without an error.
 
 `body` and `isHtml` exist and are **deprecated** — use `bodyHtml` / `bodyText`.
 

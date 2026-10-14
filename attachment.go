@@ -18,6 +18,11 @@ type Attachment struct {
 
 	// Content is the raw bytes, not base64: the transport encodes them.
 	Content []byte
+
+	// ContentID makes the attachment an inline part the HTML body refers to
+	// as cid:<ContentID> — an embedded image or a signature logo. Without the
+	// angle brackets. Empty means an ordinary attachment.
+	ContentID string
 }
 
 // attachmentJSON is the wire form. Content is []byte, which encoding/json
@@ -27,6 +32,7 @@ type attachmentJSON struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"contentType,omitempty"`
 	Content     []byte `json:"content,omitempty"`
+	ContentID   string `json:"contentId,omitempty"`
 }
 
 func (a Attachment) wire() attachmentJSON {
@@ -42,5 +48,6 @@ func (a Attachment) wire() attachmentJSON {
 		Filename:    a.Filename,
 		ContentType: contentType,
 		Content:     a.Content,
+		ContentID:   a.ContentID,
 	}
 }

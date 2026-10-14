@@ -174,6 +174,46 @@ never repeated this way, whatever the option says.
 them ignores the field rather than refusing it, and nothing in its answer says
 so; retrying there sends duplicates.
 
+### Replies, read receipts and inline images
+
+A reply threads with the message it answers when it carries that message's
+Message-ID, and the conversation's so far:
+
+```go
+client.Send(ctx, panmail.Message{
+    // ...
+    ReplyTo:       "support@example.com",
+    InReplyTo:     "<b@example.org>",
+    References:    []string{"<a@example.org>", "<b@example.org>"},
+    ReadReceiptTo: "app@example.com",
+    HTML:          `<p>Thanks!</p><img src="cid:logo">`,
+    Attachments: []panmail.Attachment{
+        {Filename: "logo.png", Content: logo, ContentID: "logo"},
+    },
+})
+```
+
+```php
+$client->send(new Message(
+    // ...
+    html: '<p>Thanks!</p><img src="cid:logo">',
+    attachments: [new Attachment('logo.png', $logo, contentId: 'logo')],
+    replyTo: 'support@example.com',
+    inReplyTo: '<b@example.org>',
+    references: ['<a@example.org>', '<b@example.org>'],
+    readReceiptTo: 'app@example.com',
+));
+```
+
+Message-IDs keep their angle brackets; a content id leaves them off. Both are
+checked against the gateway's rules before anything is sent. The recipient's
+client decides whether to honour a read receipt. `SaveSentCopy` /
+`saveSentCopy` files a copy in the sender's Sent folder when the tenant's Sent
+copies setting is on.
+
+These need a gateway newer than v2.0.0. An older one ignores the fields rather
+than refusing them, so the mail goes out without them.
+
 ## Listing providers
 
 The ids a send takes, for a key that also holds the **`providers:read`** scope
