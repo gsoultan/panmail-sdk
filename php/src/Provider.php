@@ -8,19 +8,21 @@ namespace Panmail;
  * A configured provider: as much of one as a sender needs.
  *
  * That is deliberately not all of it. The gateway also returns the transport
- * configuration — host, region, the SES access key id — with every credential
- * already cleared. Of that, only the username is kept, so an account can be
- * told apart from another on the same host; nothing that authenticates as it
- * ever is, which means a lapse in that clearing has nowhere in this client to
- * land.
+ * configuration — host, username, region, the SES access key id — with every
+ * credential already cleared. None of it is needed to send, and leaving it out
+ * means a lapse in that clearing has nowhere in this client to land: a
+ * Provider holds nothing that needs keeping out of a log.
  */
 final class Provider
 {
     /**
-     * @param list<string> $allowedDomains the From domains the provider will
-     *                                     send as, each compared whole and
-     *                                     ignoring case: example.com does not
-     *                                     admit mail.example.com. Empty means the
+     * @param list<string> $allowedSenders the From addresses the provider will
+     *                                     send as. Each is an exact address
+     *                                     ("billing@example.com") or a whole
+     *                                     domain ("*@example.com"), lower case.
+     *                                     A domain entry does not admit its
+     *                                     subdomains, and matching ignores case
+     *                                     and the display name. Empty means the
      *                                     operator has not restricted it.
      */
     public function __construct(
@@ -33,14 +35,7 @@ final class Provider
         /** A ProviderType constant, or the string the gateway sent for a kind this client does not know. */
         public readonly string $type,
 
-        public readonly array $allowedDomains,
-
-        /**
-         * The account an SMTP, IMAP or POP3 provider signs in as. Empty for the
-         * API vendors, which authenticate with a key rather than an account.
-         * The password is never returned by the gateway and never kept here.
-         */
-        public readonly string $username = '',
+        public readonly array $allowedSenders,
     ) {
     }
 }

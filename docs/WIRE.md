@@ -4,7 +4,7 @@ Everything an SDK does, written down — so you can do it without one.
 
 There are three doors into a panmail gateway and they all end in the same
 place: one `SendEmailUsecase`, which means the tenant's send rate, the backlog
-ceiling, suppressions and the provider's `AllowedDomains` apply identically
+ceiling, suppressions and the provider's allowed senders apply identically
 whichever door you came through.
 
 | Door | Use it when |
@@ -316,7 +316,7 @@ get it wrong.
 | `451` | temp failure | Anything the gateway could not classify. Deliberately temporary: an unknown error should not make a sender discard the message. |
 | `501` | — | Bad arguments. |
 | `535` | — | Authentication failed. |
-| `550` | — | Not authorised — for instance a `From` outside the provider's `AllowedDomains`. |
+| `550` | — | Not authorised — for instance a `From` outside the provider's allowed senders. |
 
 ---
 
@@ -555,7 +555,7 @@ minted for sending holds `email:send` alone and is refused with
       "id": "3f1c2b7a-0000-4000-8000-000000000001",
       "name": "Production SES",
       "type": "PROVIDER_TYPE_SES",
-      "allowedDomains": ["example.com"],
+      "allowedSenders": ["*@example.com", "billing@example.org"],
       "sendRatePerMinute": 600,
       "sendBurst": 100,
       "createTime": "2026-09-01T10:00:00Z",
@@ -572,9 +572,12 @@ Newest first. `nextPageToken` is absent on the last page — and present on any
 full page, even when nothing follows it, so a list that is an exact multiple of
 `pageSize` ends with one empty page.
 
-`allowedDomains` are the From domains the provider will send as, each compared
-whole and ignoring case: `example.com` does not admit `mail.example.com`. Empty
-means the operator has not restricted it.
+`allowedSenders` are the From addresses the provider will send as. Each entry
+is an exact address (`billing@example.org`) or a whole domain
+(`*@example.com`), lower case. Matching ignores case and the display name, and
+a domain entry does not admit its subdomains: `*@example.com` does not admit
+`ops@mail.example.com`. Empty, or absent, means the operator has not restricted
+the provider.
 
 `type` is an enum name, with one exception. A stored value the enum has no
 name for is written as a bare number — that is how protobuf JSON encodes one —
@@ -589,11 +592,8 @@ picks a provider to send through.
 key, token and DKIM private key before answering, and never returns a webhook
 secret. What remains is configuration — host, username, region, the SES access
 key id, the OAuth client id — which a `providers:read` key can therefore read.
-The SDKs decode `id`, `name`, `type`, `allowedDomains` and the `username` of an
-`smtp`, `imap` or `pop3` config, and nothing else: not because the rest is
-secret, but because a caller needs none of it. The API vendors (`sendgrid`,
-`ses`, `postmark`, `mailgun`) have no account to name, so their username is
-empty; the SES access key id is not read as one.
+The SDKs decode `id`, `name`, `type` and `allowedSenders` and nothing else: not
+because the rest is secret, but because a sender needs none of it.
 
 ### Paging is by offset
 

@@ -10,6 +10,13 @@ Both language packages take their version from the tag, so they are always relea
 
 ### Added
 
+- **Allowed senders on listed providers** — `Provider.AllowedSenders` in Go and
+  `$provider->allowedSenders` in PHP: the From addresses a provider will send
+  as, each an exact address or a whole domain written `*@domain`. It is the
+  gateway's `allowed_senders` field, which replaced `allowed_domains` in
+  gsoultan/panmail. It needs a gateway that has the field: an older one sends
+  only `allowedDomains`, which the clients no longer read.
+
 - **Replies, read receipts, Sent copies and inline images** — on `Message`,
   `ReplyTo`, `InReplyTo`, `References`, `ReadReceiptTo` and `SaveSentCopy` in
   Go, and the `replyTo`, `inReplyTo`, `references`, `readReceiptTo` and
@@ -20,14 +27,16 @@ Both language packages take their version from the tag, so they are always relea
   gsoultan/panmail#74 and #75. Message-IDs and content ids are checked against
   the gateway's rules before a send. A gateway that predates them ignores the
   fields.
-- **Provider usernames** — `Provider.Username` in Go and `Provider::$username`
-  in PHP: the account an SMTP, IMAP or POP3 provider signs in as, read from the
-  `username` of its config. Empty for the API vendors. The password is still
-  neither returned by the gateway nor decoded.
 
 ### Changed
 
 - `proto/` is re-synced with the gateway and carries the new fields.
+
+### Removed
+
+- **`Provider.AllowedDomains` (Go) and `$provider->allowedDomains` (PHP).**
+  Read `AllowedSenders` / `allowedSenders`; a domain that was `example.com`
+  there is `*@example.com` now. This is a breaking change to `Provider`.
 
 ## [0.1.0] — 2026-10-10
 

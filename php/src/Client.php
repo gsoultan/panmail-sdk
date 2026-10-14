@@ -79,7 +79,7 @@ final class Client
      * whole list either way, so this decides only how many round trips that
      * takes and how much of the transport's 1 MiB response bound each provider
      * may use: about 20 KB apiece, which one exceeds only with an
-     * allowedDomains list running to around a thousand names.
+     * allowedSenders list running to around a thousand entries.
      */
     private const PROVIDER_PAGE_SIZE = 50;
 
@@ -274,8 +274,7 @@ final class Client
 
     /**
      * Every provider in the key's tenant, newest first: the ids a Message's
-     * providerId takes, the From domains each will send as, and the account
-     * each signs in as.
+     * providerId takes, and the From addresses each will send as.
      *
      * The key needs the providers:read scope, which no key has by default. One
      * minted for sending holds email:send alone and is refused with an
@@ -702,10 +701,10 @@ final class Client
      */
     private static function provider(array $item): Provider
     {
-        $domains = [];
-        $allowed = $item['allowedDomains'] ?? [];
-        foreach (is_array($allowed) ? $allowed : [] as $domain) {
-            $domains[] = self::text($domain);
+        $senders = [];
+        $allowed = $item['allowedSenders'] ?? [];
+        foreach (is_array($allowed) ? $allowed : [] as $sender) {
+            $senders[] = self::text($sender);
         }
 
         // protobuf JSON leaves a zero value out, so no type is UNSPECIFIED. A
@@ -715,23 +714,11 @@ final class Client
         // failing the list over one old row.
         $type = self::text($item['type'] ?? '');
 
-        // The username sits in whichever config the type uses, a oneof, so at
-        // most one is present. Only it is read: never the password beside it.
-        $username = '';
-        foreach (['smtp', 'imap', 'pop3'] as $kind) {
-            $config = $item[$kind] ?? null;
-            if (is_array($config)) {
-                $username = self::text($config['username'] ?? '');
-                break;
-            }
-        }
-
         return new Provider(
             id: self::text($item['id'] ?? ''),
             name: self::text($item['name'] ?? ''),
             type: $type === '' ? ProviderType::UNSPECIFIED : $type,
-            allowedDomains: $domains,
-            username: $username,
+            allowedSenders: $senders,
         );
     }
 

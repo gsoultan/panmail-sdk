@@ -14,8 +14,8 @@ const listProvidersProcedure = "/panmail.v1.EmailProviderService/ListEmailProvid
 // providerPageSize is how many providers each request asks for. ListProviders
 // returns the whole list either way, so this decides only how many round trips
 // that takes and how much of maxResponseBytes each provider may use: about 20
-// KB apiece, which one exceeds only with an AllowedDomains list running to
-// around a thousand names.
+// KB apiece, which one exceeds only with an AllowedSenders list running to
+// around a thousand entries.
 const providerPageSize = 50
 
 // maxProviderPages bounds how long ListProviders follows the gateway's page
@@ -64,11 +64,10 @@ const (
 // Provider is a configured provider: as much of one as a sender needs.
 //
 // That is deliberately not all of it. The gateway also returns the transport
-// configuration — host, region, the SES access key id — with every credential
-// already cleared. Of that, only the username is decoded, so an account can be
-// told apart from another on the same host; nothing that authenticates as it
-// ever is, which means a lapse in that clearing has nowhere in this package to
-// land.
+// configuration — host, username, region, the SES access key id — with every
+// credential already cleared. None of it is needed to send, and leaving it out
+// means a lapse in that clearing has nowhere in this package to land: a
+// Provider holds nothing that needs keeping out of a log.
 type Provider struct {
 	// ID is what Message.ProviderID takes.
 	ID string
@@ -78,16 +77,13 @@ type Provider struct {
 
 	Type ProviderType
 
-	// AllowedDomains are the From domains the provider will send as, each
-	// compared whole and ignoring case: example.com does not admit
-	// mail.example.com. Empty means the operator has not restricted it.
-	AllowedDomains []string
-
-	// Username is the account an SMTP, IMAP or POP3 provider signs in as. It
-	// is empty for the API vendors, which authenticate with a key rather than
-	// an account. The password is never returned by the gateway and never
-	// decoded here.
-	Username string
+	// AllowedSenders are the From addresses the provider will send as. Each is
+	// an exact address ("billing@example.com") or a whole domain
+	// ("*@example.com"), lower case. A domain entry does not admit its
+	// subdomains, and matching ignores case and the display name. Empty means
+	// the operator has not restricted the provider; the gateway refuses a
+	// Message whose From is outside a non-empty list.
+	AllowedSenders []string
 }
 
 // ProviderFilter narrows ListProviders. The zero value lists every provider.
@@ -114,37 +110,16 @@ type listProvidersRequest struct {
 }
 
 // listProvidersResponse is the part of ListEmailProvidersResponse this package
-// reads. Each provider also carries the rest of its configuration, timestamps,
-// send ceilings and tenant id; none of that is named here, so none of it is
-// decoded.
+// reads. Each provider also carries its configuration, timestamps, send
+// ceilings and tenant id; none of that is named here, so none of it is decoded.
 type listProvidersResponse struct {
 	Providers []struct {
-		ID             string         `json:"id"`
-		Name           string         `json:"name"`
-		Type           enumName       `json:"type"`
-		AllowedDomains []string       `json:"allowedDomains"`
-		SMTP           *accountConfig `json:"smtp"`
-		IMAP           *accountConfig `json:"imap"`
-		POP3           *accountConfig `json:"pop3"`
+		ID             string   `json:"id"`
+		Name           string   `json:"name"`
+		Type           enumName `json:"type"`
+		AllowedSenders []string `json:"allowedSenders"`
 	} `json:"providers"`
 	NextPageToken string `json:"nextPageToken"`
-}
-
-// accountConfig is the part of an SMTP, IMAP or POP3 config this package
-// reads: the username, and not the password beside it.
-type accountConfig struct {
-	Username string `json:"username"`
-}
-
-// username is the account a provider signs in as, from whichever of its
-// configs the gateway sent. It is a oneof, so at most one is present.
-func username(configs ...*accountConfig) string {
-	for _, c := range configs {
-		if c != nil {
-			return c.Username
-		}
-	}
-	return ""
 }
 
 // enumName reads an enum from protobuf JSON, where it is normally a name. A
@@ -170,8 +145,7 @@ func (e *enumName) UnmarshalJSON(data []byte) error {
 }
 
 // ListProviders returns every provider in the key's tenant, newest first: the
-// ids Message.ProviderID takes, the From domains each will send as, and the
-// account each signs in as.
+// ids Message.ProviderID takes, and the From addresses each will send as.
 //
 // The key needs the providers:read scope, which no key has by default. One
 // minted for sending holds email:send alone and is refused with an AuthError
@@ -232,8 +206,7 @@ func (c *Client) ListProviders(ctx context.Context, filter ProviderFilter) ([]Pr
 				ID:             p.ID,
 				Name:           p.Name,
 				Type:           kind,
-				AllowedDomains: p.AllowedDomains,
-				Username:       username(p.SMTP, p.IMAP, p.POP3),
+				AllowedSenders: p.AllowedSenders,
 			})
 		}
 

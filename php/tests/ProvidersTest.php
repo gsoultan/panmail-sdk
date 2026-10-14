@@ -70,13 +70,12 @@ final class ProvidersTest extends TestCase
                 'id' => '3f1c2b7a-0000-4000-8000-000000000001',
                 'name' => 'Production SES',
                 'type' => 'PROVIDER_TYPE_SES',
-                'allowedDomains' => ['example.com', 'example.org'],
+                'allowedSenders' => ['*@example.com', 'billing@example.org'],
             ],
             [
                 'id' => '3f1c2b7a-0000-4000-8000-000000000002',
                 'name' => 'Fallback SMTP',
                 'type' => 'PROVIDER_TYPE_SMTP',
-                'smtp' => ['host' => 'smtp.example.com', 'username' => 'relay@example.com'],
             ],
         ));
 
@@ -88,14 +87,13 @@ final class ProvidersTest extends TestCase
                     id: '3f1c2b7a-0000-4000-8000-000000000001',
                     name: 'Production SES',
                     type: ProviderType::SES,
-                    allowedDomains: ['example.com', 'example.org'],
+                    allowedSenders: ['*@example.com', 'billing@example.org'],
                 ),
                 new Provider(
                     id: '3f1c2b7a-0000-4000-8000-000000000002',
                     name: 'Fallback SMTP',
                     type: ProviderType::SMTP,
-                    allowedDomains: [],
-                    username: 'relay@example.com',
+                    allowedSenders: [],
                 ),
             ],
             $providers
@@ -309,7 +307,7 @@ final class ProvidersTest extends TestCase
             'id' => 'p1',
             'name' => 'Relay',
             'type' => 'PROVIDER_TYPE_SMTP',
-            'allowedDomains' => ['example.com'],
+            'allowedSenders' => ['*@example.com'],
             'tenantId' => 'tenant-7c1e',
             'sendRatePerMinute' => 600,
             'sendBurst' => 100,
@@ -328,45 +326,12 @@ final class ProvidersTest extends TestCase
         $providers = self::client($transport)->listProviders();
 
         self::assertEquals(
-            [new Provider(id: 'p1', name: 'Relay', type: ProviderType::SMTP, allowedDomains: ['example.com'], username: 'relay-user')],
+            [new Provider(id: 'p1', name: 'Relay', type: ProviderType::SMTP, allowedSenders: ['*@example.com'])],
             $providers
         );
 
         $logged = print_r($providers, true) . var_export($providers, true);
-        foreach (['hunter2', '-----BEGIN', 'whsec-lapse', 'smtp.internal.example', 'tenant-7c1e'] as $leak) {
-            self::assertStringNotContainsString($leak, $logged, "a logged provider carries $leak");
-        }
-    }
-
-    /**
-     * The username sits in whichever config the provider's type uses. The API
-     * vendors authenticate with a key, not an account, so theirs is empty, and
-     * the SES access key id is not read as one.
-     */
-    public function testListProvidersReadsTheUsernameOfEachAccountKind(): void
-    {
-        $transport = new FakeTransport(self::page(
-            '',
-            ['id' => 'smtp', 'type' => 'PROVIDER_TYPE_SMTP', 'smtp' => ['username' => 'smtp-user', 'password' => 'hunter2']],
-            ['id' => 'imap', 'type' => 'PROVIDER_TYPE_IMAP', 'imap' => ['username' => 'imap-user', 'password' => 'hunter2']],
-            ['id' => 'pop3', 'type' => 'PROVIDER_TYPE_POP3', 'pop3' => ['username' => 'pop3-user', 'password' => 'hunter2']],
-            ['id' => 'ses', 'type' => 'PROVIDER_TYPE_SES', 'ses' => ['region' => 'eu-west-1', 'accessKey' => 'AKIA-LAPSE']],
-            ['id' => 'bare', 'type' => 'PROVIDER_TYPE_SMTP'],
-        ));
-
-        $providers = self::client($transport)->listProviders();
-
-        $usernames = [];
-        foreach ($providers as $provider) {
-            $usernames[$provider->id] = $provider->username;
-        }
-        self::assertSame(
-            ['smtp' => 'smtp-user', 'imap' => 'imap-user', 'pop3' => 'pop3-user', 'ses' => '', 'bare' => ''],
-            $usernames
-        );
-
-        $logged = print_r($providers, true) . var_export($providers, true);
-        foreach (['hunter2', 'AKIA-LAPSE'] as $leak) {
+        foreach (['hunter2', '-----BEGIN', 'whsec-lapse', 'relay-user', 'smtp.internal.example', 'tenant-7c1e'] as $leak) {
             self::assertStringNotContainsString($leak, $logged, "a logged provider carries $leak");
         }
     }
