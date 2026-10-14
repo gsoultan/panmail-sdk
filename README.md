@@ -198,8 +198,9 @@ foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
 ```
 
 One call returns the whole list, newest first; the clients follow the
-gateway's pages for you. A provider carries its id, name, type and the From
-domains it will send as — nothing else, so it is safe to log. IMAP and POP3
+gateway's pages for you. A provider carries its id, name, type, the From
+domains it will send as and, for SMTP, IMAP and POP3, the username it signs in
+as — never a password or key, so it is safe to log. IMAP and POP3
 providers are listed too, but they read inbound mail rather than send it.
 
 The name filter is a search, not a lookup: `prod` matches `Production` and

@@ -274,7 +274,8 @@ final class Client
 
     /**
      * Every provider in the key's tenant, newest first: the ids a Message's
-     * providerId takes, and the From domains each will send as.
+     * providerId takes, the From domains each will send as, and the account
+     * each signs in as.
      *
      * The key needs the providers:read scope, which no key has by default. One
      * minted for sending holds email:send alone and is refused with an
@@ -714,11 +715,23 @@ final class Client
         // failing the list over one old row.
         $type = self::text($item['type'] ?? '');
 
+        // The username sits in whichever config the type uses, a oneof, so at
+        // most one is present. Only it is read: never the password beside it.
+        $username = '';
+        foreach (['smtp', 'imap', 'pop3'] as $kind) {
+            $config = $item[$kind] ?? null;
+            if (is_array($config)) {
+                $username = self::text($config['username'] ?? '');
+                break;
+            }
+        }
+
         return new Provider(
             id: self::text($item['id'] ?? ''),
             name: self::text($item['name'] ?? ''),
             type: $type === '' ? ProviderType::UNSPECIFIED : $type,
             allowedDomains: $domains,
+            username: $username,
         );
     }
 

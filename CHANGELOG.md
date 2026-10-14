@@ -8,7 +8,12 @@ Both language packages take their version from the tag, so they are always relea
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Provider usernames** — `Provider.Username` in Go and `Provider::$username`
+  in PHP: the account an SMTP, IMAP or POP3 provider signs in as, read from the
+  `username` of its config. Empty for the API vendors. The password is still
+  neither returned by the gateway nor decoded.
 
 ## [0.1.0] — 2026-10-10
 

@@ -575,8 +575,11 @@ picks a provider to send through.
 key, token and DKIM private key before answering, and never returns a webhook
 secret. What remains is configuration — host, username, region, the SES access
 key id, the OAuth client id — which a `providers:read` key can therefore read.
-The SDKs decode `id`, `name`, `type` and `allowedDomains` and nothing else: not
-because the rest is secret, but because a sender needs none of it.
+The SDKs decode `id`, `name`, `type`, `allowedDomains` and the `username` of an
+`smtp`, `imap` or `pop3` config, and nothing else: not because the rest is
+secret, but because a caller needs none of it. The API vendors (`sendgrid`,
+`ses`, `postmark`, `mailgun`) have no account to name, so their username is
+empty; the SES access key id is not read as one.
 
 ### Paging is by offset
 
