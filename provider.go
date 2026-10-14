@@ -118,11 +118,6 @@ type listProvidersResponse struct {
 		Name           string   `json:"name"`
 		Type           enumName `json:"type"`
 		AllowedSenders []string `json:"allowedSenders"`
-
-		// AllowedDomains is what a gateway that predates allowed senders
-		// sends instead. It is read only to fill AllowedSenders from, so a
-		// restriction on such a gateway is not mistaken for none.
-		AllowedDomains []string `json:"allowedDomains"`
 	} `json:"providers"`
 	NextPageToken string `json:"nextPageToken"`
 }
@@ -211,7 +206,7 @@ func (c *Client) ListProviders(ctx context.Context, filter ProviderFilter) ([]Pr
 				ID:             p.ID,
 				Name:           p.Name,
 				Type:           kind,
-				AllowedSenders: allowedSenders(p.AllowedSenders, p.AllowedDomains),
+				AllowedSenders: p.AllowedSenders,
 			})
 		}
 
@@ -228,20 +223,4 @@ func (c *Client) ListProviders(ctx context.Context, filter ProviderFilter) ([]Pr
 
 	return nil, fmt.Errorf("panmail: the gateway was still paging after %d pages of %d providers; "+
 		"narrow the list with a name or type filter", maxProviderPages, providerPageSize)
-}
-
-// allowedSenders is a provider's allowed senders, from whichever field the
-// gateway sent. A current gateway sends allowedSenders, and also the
-// deprecated allowedDomains holding only its *@domain entries, so the two are
-// never merged: allowedDomains is read only when allowedSenders is absent,
-// which is a gateway from before addresses could be listed.
-func allowedSenders(senders, legacyDomains []string) []string {
-	if senders != nil || legacyDomains == nil {
-		return senders
-	}
-	out := make([]string, 0, len(legacyDomains))
-	for _, d := range legacyDomains {
-		out = append(out, "*@"+d)
-	}
-	return out
 }

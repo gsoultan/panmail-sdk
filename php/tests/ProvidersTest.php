@@ -71,9 +71,6 @@ final class ProvidersTest extends TestCase
                 'name' => 'Production SES',
                 'type' => 'PROVIDER_TYPE_SES',
                 'allowedSenders' => ['*@example.com', 'billing@example.org'],
-                // What a current gateway also sends, for older clients: only
-                // the *@domain entries. Merging it would list example.com twice.
-                'allowedDomains' => ['example.com'],
             ],
             [
                 'id' => '3f1c2b7a-0000-4000-8000-000000000002',
@@ -295,22 +292,6 @@ final class ProvidersTest extends TestCase
         ));
 
         self::assertSame($expected, self::ids(self::client($ignoresTheFilter)->listProviders(type: $type)));
-    }
-
-    public function testListProvidersReadsAnOlderGatewaysAllowedDomains(): void
-    {
-        // A gateway from before allowed senders sends only allowedDomains.
-        // Read as nothing, its restriction would look like none.
-        $transport = new FakeTransport(self::page('', [
-            'id' => 'p1',
-            'name' => 'Legacy',
-            'type' => 'PROVIDER_TYPE_SES',
-            'allowedDomains' => ['example.com', 'example.org'],
-        ]));
-
-        $providers = self::client($transport)->listProviders();
-
-        self::assertSame(['*@example.com', '*@example.org'], $providers[0]->allowedSenders);
     }
 
     /**

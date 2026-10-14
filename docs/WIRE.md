@@ -556,7 +556,6 @@ minted for sending holds `email:send` alone and is refused with
       "name": "Production SES",
       "type": "PROVIDER_TYPE_SES",
       "allowedSenders": ["*@example.com", "billing@example.org"],
-      "allowedDomains": ["example.com"],
       "sendRatePerMinute": 600,
       "sendBurst": 100,
       "createTime": "2026-09-01T10:00:00Z",
@@ -579,12 +578,6 @@ is an exact address (`billing@example.org`) or a whole domain
 a domain entry does not admit its subdomains: `*@example.com` does not admit
 `ops@mail.example.com`. Empty, or absent, means the operator has not restricted
 the provider.
-
-`allowedDomains` is deprecated. A current gateway still sends it, holding only
-the `*@domain` entries without the `*@`, for clients written before addresses
-could be listed; read `allowedSenders` instead. A gateway from before then
-sends `allowedDomains` alone, and the SDKs read each of its domains as
-`*@domain`.
 
 `type` is an enum name, with one exception. A stored value the enum has no
 name for is written as a bare number — that is how protobuf JSON encodes one —

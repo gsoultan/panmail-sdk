@@ -13,10 +13,9 @@ Both language packages take their version from the tag, so they are always relea
 - **Allowed senders on listed providers** — `Provider.AllowedSenders` in Go and
   `$provider->allowedSenders` in PHP: the From addresses a provider will send
   as, each an exact address or a whole domain written `*@domain`. It is the
-  gateway's `allowed_senders` field, added in gsoultan/panmail alongside
-  address-level restrictions. Against a gateway that predates it, the clients
-  read the old `allowedDomains` as `*@domain` entries, so a restriction there
-  is not mistaken for none.
+  gateway's `allowed_senders` field, which replaced `allowed_domains` in
+  gsoultan/panmail. It needs a gateway that has the field: an older one sends
+  only `allowedDomains`, which the clients no longer read.
 
 - **Replies, read receipts, Sent copies and inline images** — on `Message`,
   `ReplyTo`, `InReplyTo`, `References`, `ReadReceiptTo` and `SaveSentCopy` in

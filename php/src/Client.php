@@ -701,21 +701,10 @@ final class Client
      */
     private static function provider(array $item): Provider
     {
-        // A current gateway sends allowedSenders, and also the deprecated
-        // allowedDomains holding only its *@domain entries, so the two are
-        // never merged. allowedDomains is read only when allowedSenders is
-        // absent: a gateway from before addresses could be listed, whose
-        // restriction would otherwise look like none.
         $senders = [];
-        if (array_key_exists('allowedSenders', $item)) {
-            foreach (is_array($item['allowedSenders']) ? $item['allowedSenders'] : [] as $sender) {
-                $senders[] = self::text($sender);
-            }
-        } else {
-            $legacy = $item['allowedDomains'] ?? [];
-            foreach (is_array($legacy) ? $legacy : [] as $domain) {
-                $senders[] = '*@' . self::text($domain);
-            }
+        $allowed = $item['allowedSenders'] ?? [];
+        foreach (is_array($allowed) ? $allowed : [] as $sender) {
+            $senders[] = self::text($sender);
         }
 
         // protobuf JSON leaves a zero value out, so no type is UNSPECIFIED. A

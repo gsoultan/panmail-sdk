@@ -52,9 +52,6 @@ func TestListProviders(t *testing.T) {
 			"name":           "Production SES",
 			"type":           "PROVIDER_TYPE_SES",
 			"allowedSenders": []string{"*@example.com", "billing@example.org"},
-			// What a current gateway also sends, for older clients: only the
-			// *@domain entries. Merging it would list example.com twice.
-			"allowedDomains": []string{"example.com"},
 		},
 		map[string]any{
 			"id":   "3f1c2b7a-0000-4000-8000-000000000002",
@@ -83,27 +80,6 @@ func TestListProviders(t *testing.T) {
 	}
 	if !reflect.DeepEqual(providers, want) {
 		t.Errorf("ListProviders = %+v, want %+v", providers, want)
-	}
-}
-
-// A gateway from before allowed senders sends only allowedDomains. Read as
-// nothing, its restriction would look like none; read as *@domain, it says
-// what the gateway enforces.
-func TestListProvidersReadsAnOlderGatewaysAllowedDomains(t *testing.T) {
-	g := lists(t, page("", map[string]any{
-		"id":             "p1",
-		"name":           "Legacy",
-		"type":           "PROVIDER_TYPE_SES",
-		"allowedDomains": []string{"example.com", "example.org"},
-	}))
-
-	providers, err := client(t, g).ListProviders(context.Background(), panmail.ProviderFilter{})
-	if err != nil {
-		t.Fatalf("ListProviders: %v", err)
-	}
-	want := []string{"*@example.com", "*@example.org"}
-	if len(providers) != 1 || !reflect.DeepEqual(providers[0].AllowedSenders, want) {
-		t.Errorf("AllowedSenders = %+v, want %v", providers, want)
 	}
 }
 
