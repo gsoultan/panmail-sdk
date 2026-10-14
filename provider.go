@@ -14,8 +14,8 @@ const listProvidersProcedure = "/panmail.v1.EmailProviderService/ListEmailProvid
 // providerPageSize is how many providers each request asks for. ListProviders
 // returns the whole list either way, so this decides only how many round trips
 // that takes and how much of maxResponseBytes each provider may use: about 20
-// KB apiece, which one exceeds only with an AllowedDomains list running to
-// around a thousand names.
+// KB apiece, which one exceeds only with an AllowedSenders list running to
+// around a thousand entries.
 const providerPageSize = 50
 
 // maxProviderPages bounds how long ListProviders follows the gateway's page
@@ -77,10 +77,13 @@ type Provider struct {
 
 	Type ProviderType
 
-	// AllowedDomains are the From domains the provider will send as, each
-	// compared whole and ignoring case: example.com does not admit
-	// mail.example.com. Empty means the operator has not restricted it.
-	AllowedDomains []string
+	// AllowedSenders are the From addresses the provider will send as. Each is
+	// an exact address ("billing@example.com") or a whole domain
+	// ("*@example.com"), lower case. A domain entry does not admit its
+	// subdomains, and matching ignores case and the display name. Empty means
+	// the operator has not restricted the provider; the gateway refuses a
+	// Message whose From is outside a non-empty list.
+	AllowedSenders []string
 }
 
 // ProviderFilter narrows ListProviders. The zero value lists every provider.
@@ -114,6 +117,11 @@ type listProvidersResponse struct {
 		ID             string   `json:"id"`
 		Name           string   `json:"name"`
 		Type           enumName `json:"type"`
+		AllowedSenders []string `json:"allowedSenders"`
+
+		// AllowedDomains is what a gateway that predates allowed senders
+		// sends instead. It is read only to fill AllowedSenders from, so a
+		// restriction on such a gateway is not mistaken for none.
 		AllowedDomains []string `json:"allowedDomains"`
 	} `json:"providers"`
 	NextPageToken string `json:"nextPageToken"`
@@ -142,7 +150,7 @@ func (e *enumName) UnmarshalJSON(data []byte) error {
 }
 
 // ListProviders returns every provider in the key's tenant, newest first: the
-// ids Message.ProviderID takes, and the From domains each will send as.
+// ids Message.ProviderID takes, and the From addresses each will send as.
 //
 // The key needs the providers:read scope, which no key has by default. One
 // minted for sending holds email:send alone and is refused with an AuthError
@@ -203,7 +211,7 @@ func (c *Client) ListProviders(ctx context.Context, filter ProviderFilter) ([]Pr
 				ID:             p.ID,
 				Name:           p.Name,
 				Type:           kind,
-				AllowedDomains: p.AllowedDomains,
+				AllowedSenders: allowedSenders(p.AllowedSenders, p.AllowedDomains),
 			})
 		}
 
@@ -220,4 +228,20 @@ func (c *Client) ListProviders(ctx context.Context, filter ProviderFilter) ([]Pr
 
 	return nil, fmt.Errorf("panmail: the gateway was still paging after %d pages of %d providers; "+
 		"narrow the list with a name or type filter", maxProviderPages, providerPageSize)
+}
+
+// allowedSenders is a provider's allowed senders, from whichever field the
+// gateway sent. A current gateway sends allowedSenders, and also the
+// deprecated allowedDomains holding only its *@domain entries, so the two are
+// never merged: allowedDomains is read only when allowedSenders is absent,
+// which is a gateway from before addresses could be listed.
+func allowedSenders(senders, legacyDomains []string) []string {
+	if senders != nil || legacyDomains == nil {
+		return senders
+	}
+	out := make([]string, 0, len(legacyDomains))
+	for _, d := range legacyDomains {
+		out = append(out, "*@"+d)
+	}
+	return out
 }

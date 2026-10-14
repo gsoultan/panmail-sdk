@@ -70,7 +70,10 @@ final class ProvidersTest extends TestCase
                 'id' => '3f1c2b7a-0000-4000-8000-000000000001',
                 'name' => 'Production SES',
                 'type' => 'PROVIDER_TYPE_SES',
-                'allowedDomains' => ['example.com', 'example.org'],
+                'allowedSenders' => ['*@example.com', 'billing@example.org'],
+                // What a current gateway also sends, for older clients: only
+                // the *@domain entries. Merging it would list example.com twice.
+                'allowedDomains' => ['example.com'],
             ],
             [
                 'id' => '3f1c2b7a-0000-4000-8000-000000000002',
@@ -87,13 +90,13 @@ final class ProvidersTest extends TestCase
                     id: '3f1c2b7a-0000-4000-8000-000000000001',
                     name: 'Production SES',
                     type: ProviderType::SES,
-                    allowedDomains: ['example.com', 'example.org'],
+                    allowedSenders: ['*@example.com', 'billing@example.org'],
                 ),
                 new Provider(
                     id: '3f1c2b7a-0000-4000-8000-000000000002',
                     name: 'Fallback SMTP',
                     type: ProviderType::SMTP,
-                    allowedDomains: [],
+                    allowedSenders: [],
                 ),
             ],
             $providers
@@ -294,6 +297,22 @@ final class ProvidersTest extends TestCase
         self::assertSame($expected, self::ids(self::client($ignoresTheFilter)->listProviders(type: $type)));
     }
 
+    public function testListProvidersReadsAnOlderGatewaysAllowedDomains(): void
+    {
+        // A gateway from before allowed senders sends only allowedDomains.
+        // Read as nothing, its restriction would look like none.
+        $transport = new FakeTransport(self::page('', [
+            'id' => 'p1',
+            'name' => 'Legacy',
+            'type' => 'PROVIDER_TYPE_SES',
+            'allowedDomains' => ['example.com', 'example.org'],
+        ]));
+
+        $providers = self::client($transport)->listProviders();
+
+        self::assertSame(['*@example.com', '*@example.org'], $providers[0]->allowedSenders);
+    }
+
     /**
      * The gateway returns every provider's configuration — credentials cleared —
      * along with its tenant id, timestamps and send ceilings. None of it is
@@ -307,7 +326,7 @@ final class ProvidersTest extends TestCase
             'id' => 'p1',
             'name' => 'Relay',
             'type' => 'PROVIDER_TYPE_SMTP',
-            'allowedDomains' => ['example.com'],
+            'allowedSenders' => ['*@example.com'],
             'tenantId' => 'tenant-7c1e',
             'sendRatePerMinute' => 600,
             'sendBurst' => 100,
@@ -326,7 +345,7 @@ final class ProvidersTest extends TestCase
         $providers = self::client($transport)->listProviders();
 
         self::assertEquals(
-            [new Provider(id: 'p1', name: 'Relay', type: ProviderType::SMTP, allowedDomains: ['example.com'])],
+            [new Provider(id: 'p1', name: 'Relay', type: ProviderType::SMTP, allowedSenders: ['*@example.com'])],
             $providers
         );
 

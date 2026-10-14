@@ -79,7 +79,7 @@ final class Client
      * whole list either way, so this decides only how many round trips that
      * takes and how much of the transport's 1 MiB response bound each provider
      * may use: about 20 KB apiece, which one exceeds only with an
-     * allowedDomains list running to around a thousand names.
+     * allowedSenders list running to around a thousand entries.
      */
     private const PROVIDER_PAGE_SIZE = 50;
 
@@ -274,7 +274,7 @@ final class Client
 
     /**
      * Every provider in the key's tenant, newest first: the ids a Message's
-     * providerId takes, and the From domains each will send as.
+     * providerId takes, and the From addresses each will send as.
      *
      * The key needs the providers:read scope, which no key has by default. One
      * minted for sending holds email:send alone and is refused with an
@@ -701,10 +701,21 @@ final class Client
      */
     private static function provider(array $item): Provider
     {
-        $domains = [];
-        $allowed = $item['allowedDomains'] ?? [];
-        foreach (is_array($allowed) ? $allowed : [] as $domain) {
-            $domains[] = self::text($domain);
+        // A current gateway sends allowedSenders, and also the deprecated
+        // allowedDomains holding only its *@domain entries, so the two are
+        // never merged. allowedDomains is read only when allowedSenders is
+        // absent: a gateway from before addresses could be listed, whose
+        // restriction would otherwise look like none.
+        $senders = [];
+        if (array_key_exists('allowedSenders', $item)) {
+            foreach (is_array($item['allowedSenders']) ? $item['allowedSenders'] : [] as $sender) {
+                $senders[] = self::text($sender);
+            }
+        } else {
+            $legacy = $item['allowedDomains'] ?? [];
+            foreach (is_array($legacy) ? $legacy : [] as $domain) {
+                $senders[] = '*@' . self::text($domain);
+            }
         }
 
         // protobuf JSON leaves a zero value out, so no type is UNSPECIFIED. A
@@ -718,7 +729,7 @@ final class Client
             id: self::text($item['id'] ?? ''),
             name: self::text($item['name'] ?? ''),
             type: $type === '' ? ProviderType::UNSPECIFIED : $type,
-            allowedDomains: $domains,
+            allowedSenders: $senders,
         );
     }
 

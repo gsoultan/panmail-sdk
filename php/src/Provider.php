@@ -16,10 +16,13 @@ namespace Panmail;
 final class Provider
 {
     /**
-     * @param list<string> $allowedDomains the From domains the provider will
-     *                                     send as, each compared whole and
-     *                                     ignoring case: example.com does not
-     *                                     admit mail.example.com. Empty means the
+     * @param list<string> $allowedSenders the From addresses the provider will
+     *                                     send as. Each is an exact address
+     *                                     ("billing@example.com") or a whole
+     *                                     domain ("*@example.com"), lower case.
+     *                                     A domain entry does not admit its
+     *                                     subdomains, and matching ignores case
+     *                                     and the display name. Empty means the
      *                                     operator has not restricted it.
      */
     public function __construct(
@@ -32,7 +35,7 @@ final class Provider
         /** A ProviderType constant, or the string the gateway sent for a kind this client does not know. */
         public readonly string $type,
 
-        public readonly array $allowedDomains,
+        public readonly array $allowedSenders,
     ) {
     }
 }

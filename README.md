@@ -225,7 +225,7 @@ if err != nil {
     return err
 }
 for _, p := range providers {
-    log.Println(p.ID, p.Name, p.AllowedDomains)
+    log.Println(p.ID, p.Name, p.AllowedSenders) // e.g. [*@example.com billing@example.org]
 }
 ```
 

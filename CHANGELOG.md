@@ -10,6 +10,14 @@ Both language packages take their version from the tag, so they are always relea
 
 ### Added
 
+- **Allowed senders on listed providers** — `Provider.AllowedSenders` in Go and
+  `$provider->allowedSenders` in PHP: the From addresses a provider will send
+  as, each an exact address or a whole domain written `*@domain`. It is the
+  gateway's `allowed_senders` field, added in gsoultan/panmail alongside
+  address-level restrictions. Against a gateway that predates it, the clients
+  read the old `allowedDomains` as `*@domain` entries, so a restriction there
+  is not mistaken for none.
+
 - **Replies, read receipts, Sent copies and inline images** — on `Message`,
   `ReplyTo`, `InReplyTo`, `References`, `ReadReceiptTo` and `SaveSentCopy` in
   Go, and the `replyTo`, `inReplyTo`, `references`, `readReceiptTo` and
@@ -24,6 +32,12 @@ Both language packages take their version from the tag, so they are always relea
 ### Changed
 
 - `proto/` is re-synced with the gateway and carries the new fields.
+
+### Removed
+
+- **`Provider.AllowedDomains` (Go) and `$provider->allowedDomains` (PHP).**
+  Read `AllowedSenders` / `allowedSenders`; a domain that was `example.com`
+  there is `*@example.com` now. This is a breaking change to `Provider`.
 
 ## [0.1.0] — 2026-10-10
 

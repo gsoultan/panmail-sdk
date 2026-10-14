@@ -48,7 +48,8 @@ foreach ($client->listProviders(type: ProviderType::SES) as $provider) {
 ```
 
 One call returns the whole list, following the gateway's pages for you. Each
-provider carries its id, name, type and allowed From domains, and nothing else.
+provider carries its id, name, type and allowed senders (exact addresses and
+`*@domain` entries), and nothing else.
 
 **A message's delivery events can be read** with a key that also holds
 `events:read`, oldest first, every recipient:

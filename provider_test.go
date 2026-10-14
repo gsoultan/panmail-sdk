@@ -51,7 +51,10 @@ func TestListProviders(t *testing.T) {
 			"id":             "3f1c2b7a-0000-4000-8000-000000000001",
 			"name":           "Production SES",
 			"type":           "PROVIDER_TYPE_SES",
-			"allowedDomains": []string{"example.com", "example.org"},
+			"allowedSenders": []string{"*@example.com", "billing@example.org"},
+			// What a current gateway also sends, for older clients: only the
+			// *@domain entries. Merging it would list example.com twice.
+			"allowedDomains": []string{"example.com"},
 		},
 		map[string]any{
 			"id":   "3f1c2b7a-0000-4000-8000-000000000002",
@@ -70,7 +73,7 @@ func TestListProviders(t *testing.T) {
 			ID:             "3f1c2b7a-0000-4000-8000-000000000001",
 			Name:           "Production SES",
 			Type:           panmail.ProviderTypeSES,
-			AllowedDomains: []string{"example.com", "example.org"},
+			AllowedSenders: []string{"*@example.com", "billing@example.org"},
 		},
 		{
 			ID:   "3f1c2b7a-0000-4000-8000-000000000002",
@@ -80,6 +83,27 @@ func TestListProviders(t *testing.T) {
 	}
 	if !reflect.DeepEqual(providers, want) {
 		t.Errorf("ListProviders = %+v, want %+v", providers, want)
+	}
+}
+
+// A gateway from before allowed senders sends only allowedDomains. Read as
+// nothing, its restriction would look like none; read as *@domain, it says
+// what the gateway enforces.
+func TestListProvidersReadsAnOlderGatewaysAllowedDomains(t *testing.T) {
+	g := lists(t, page("", map[string]any{
+		"id":             "p1",
+		"name":           "Legacy",
+		"type":           "PROVIDER_TYPE_SES",
+		"allowedDomains": []string{"example.com", "example.org"},
+	}))
+
+	providers, err := client(t, g).ListProviders(context.Background(), panmail.ProviderFilter{})
+	if err != nil {
+		t.Fatalf("ListProviders: %v", err)
+	}
+	want := []string{"*@example.com", "*@example.org"}
+	if len(providers) != 1 || !reflect.DeepEqual(providers[0].AllowedSenders, want) {
+		t.Errorf("AllowedSenders = %+v, want %v", providers, want)
 	}
 }
 
@@ -318,7 +342,7 @@ func TestListProvidersDecodesOnlyWhatASenderNeeds(t *testing.T) {
 		"id":                "p1",
 		"name":              "Relay",
 		"type":              "PROVIDER_TYPE_SMTP",
-		"allowedDomains":    []string{"example.com"},
+		"allowedSenders":    []string{"*@example.com"},
 		"tenantId":          "tenant-7c1e",
 		"sendRatePerMinute": 600,
 		"sendBurst":         100,
@@ -340,7 +364,7 @@ func TestListProvidersDecodesOnlyWhatASenderNeeds(t *testing.T) {
 	}
 
 	want := []panmail.Provider{{
-		ID: "p1", Name: "Relay", Type: panmail.ProviderTypeSMTP, AllowedDomains: []string{"example.com"},
+		ID: "p1", Name: "Relay", Type: panmail.ProviderTypeSMTP, AllowedSenders: []string{"*@example.com"},
 	}}
 	if !reflect.DeepEqual(providers, want) {
 		t.Errorf("ListProviders = %+v, want %+v", providers, want)
@@ -494,11 +518,11 @@ func TestListProvidersSaysWhichCallDidNotComplete(t *testing.T) {
 // handed to the decoder, it read as JSON that would not parse, which sends the
 // reader looking for a malformed body rather than a long one.
 func TestListProvidersReportsAPageOverTheResponseBound(t *testing.T) {
-	domains := make([]string, 0, 60_000)
-	for i := range cap(domains) {
-		domains = append(domains, fmt.Sprintf("customer-%05d.example", i))
+	senders := make([]string, 0, 60_000)
+	for i := range cap(senders) {
+		senders = append(senders, fmt.Sprintf("*@customer-%05d.example", i))
 	}
-	g := lists(t, page("", map[string]any{"id": "p1", "type": "PROVIDER_TYPE_SMTP", "allowedDomains": domains}))
+	g := lists(t, page("", map[string]any{"id": "p1", "type": "PROVIDER_TYPE_SMTP", "allowedSenders": senders}))
 
 	_, err := client(t, g).ListProviders(context.Background(), panmail.ProviderFilter{})
 	if err == nil {

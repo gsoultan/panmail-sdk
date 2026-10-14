@@ -44,7 +44,7 @@ as an error rather than returning the pages read so far.
 **A listing keeps only what a sender needs.** The gateway clears every
 credential from a provider before returning it, and what remains is
 configuration: host, username, region, the SES access key id. The clients keep
-a provider's id, name, type and allowed domains and nothing else, so a lapse in
+a provider's id, name, type and allowed senders and nothing else, so a lapse in
 the gateway's clearing has nowhere in them to land, and a listed provider is
 safe to log.
 
