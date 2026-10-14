@@ -57,6 +57,7 @@ func TestListProviders(t *testing.T) {
 			"id":   "3f1c2b7a-0000-4000-8000-000000000002",
 			"name": "Fallback SMTP",
 			"type": "PROVIDER_TYPE_SMTP",
+			"smtp": map[string]any{"host": "smtp.example.com", "username": "relay@example.com"},
 		},
 	))
 
@@ -73,9 +74,10 @@ func TestListProviders(t *testing.T) {
 			AllowedDomains: []string{"example.com", "example.org"},
 		},
 		{
-			ID:   "3f1c2b7a-0000-4000-8000-000000000002",
-			Name: "Fallback SMTP",
-			Type: panmail.ProviderTypeSMTP,
+			ID:       "3f1c2b7a-0000-4000-8000-000000000002",
+			Name:     "Fallback SMTP",
+			Type:     panmail.ProviderTypeSMTP,
+			Username: "relay@example.com",
 		},
 	}
 	if !reflect.DeepEqual(providers, want) {
@@ -309,10 +311,9 @@ func TestListProvidersKeepsOnlyTheTypeItAskedFor(t *testing.T) {
 }
 
 // The gateway returns every provider's configuration — credentials cleared —
-// along with its tenant id, timestamps and send ceilings. None of it is needed
-// to send, and none of it is decoded, so a lapse in the gateway's clearing has
-// nowhere here to land. The password below is what such a lapse would look
-// like.
+// along with its tenant id, timestamps and send ceilings. Only the username is
+// decoded from it, so a lapse in the gateway's clearing has nowhere here to
+// land. The password below is what such a lapse would look like.
 func TestListProvidersDecodesOnlyWhatASenderNeeds(t *testing.T) {
 	g := lists(t, page("", map[string]any{
 		"id":                "p1",
@@ -341,13 +342,48 @@ func TestListProvidersDecodesOnlyWhatASenderNeeds(t *testing.T) {
 
 	want := []panmail.Provider{{
 		ID: "p1", Name: "Relay", Type: panmail.ProviderTypeSMTP, AllowedDomains: []string{"example.com"},
+		Username: "relay-user",
 	}}
 	if !reflect.DeepEqual(providers, want) {
 		t.Errorf("ListProviders = %+v, want %+v", providers, want)
 	}
 
 	logged := fmt.Sprintf("%+v %#v", providers, providers)
-	for _, leak := range []string{"hunter2", "-----BEGIN", "whsec-lapse", "relay-user", "smtp.internal.example", "tenant-7c1e"} {
+	for _, leak := range []string{"hunter2", "-----BEGIN", "whsec-lapse", "smtp.internal.example", "tenant-7c1e"} {
+		if strings.Contains(logged, leak) {
+			t.Errorf("a logged provider carries %q", leak)
+		}
+	}
+}
+
+// The username sits in whichever config the provider's type uses. The API
+// vendors authenticate with a key, not an account, so theirs is empty — and
+// the SES access key id is not read as one.
+func TestListProvidersReadsTheUsernameOfEachAccountKind(t *testing.T) {
+	g := lists(t, page("",
+		map[string]any{"id": "smtp", "type": "PROVIDER_TYPE_SMTP", "smtp": map[string]any{"username": "smtp-user", "password": "hunter2"}},
+		map[string]any{"id": "imap", "type": "PROVIDER_TYPE_IMAP", "imap": map[string]any{"username": "imap-user", "password": "hunter2"}},
+		map[string]any{"id": "pop3", "type": "PROVIDER_TYPE_POP3", "pop3": map[string]any{"username": "pop3-user", "password": "hunter2"}},
+		map[string]any{"id": "ses", "type": "PROVIDER_TYPE_SES", "ses": map[string]any{"region": "eu-west-1", "accessKey": "AKIA-LAPSE"}},
+		map[string]any{"id": "bare", "type": "PROVIDER_TYPE_SMTP"},
+	))
+
+	providers, err := client(t, g).ListProviders(context.Background(), panmail.ProviderFilter{})
+	if err != nil {
+		t.Fatalf("ListProviders: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, p := range providers {
+		got[p.ID] = p.Username
+	}
+	want := map[string]string{"smtp": "smtp-user", "imap": "imap-user", "pop3": "pop3-user", "ses": "", "bare": ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("usernames = %v, want %v", got, want)
+	}
+
+	logged := fmt.Sprintf("%+v %#v", providers, providers)
+	for _, leak := range []string{"hunter2", "AKIA-LAPSE"} {
 		if strings.Contains(logged, leak) {
 			t.Errorf("a logged provider carries %q", leak)
 		}

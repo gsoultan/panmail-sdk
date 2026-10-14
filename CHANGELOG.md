@@ -20,6 +20,10 @@ Both language packages take their version from the tag, so they are always relea
   gsoultan/panmail#74 and #75. Message-IDs and content ids are checked against
   the gateway's rules before a send. A gateway that predates them ignores the
   fields.
+- **Provider usernames** — `Provider.Username` in Go and `Provider::$username`
+  in PHP: the account an SMTP, IMAP or POP3 provider signs in as, read from the
+  `username` of its config. Empty for the API vendors. The password is still
+  neither returned by the gateway nor decoded.
 
 ### Changed
 
