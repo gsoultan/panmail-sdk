@@ -69,6 +69,18 @@ if ($client->checkSuppression('bounced@example.net')->suppressed) {
 }
 ```
 
+**Whether the gateway can serve** — `ready()` asks its `/readyz`, needs no
+key, and throws `NotReadyException` naming what failed when the gateway says
+no:
+
+```php
+try {
+    $client->ready();
+} catch (NotReadyException $e) {
+    echo "not ready: ", implode(', ', $e->failed), PHP_EOL; // database
+}
+```
+
 **Webhooks are verified and decoded** with `Webhook::parse()`, which returns
 the envelope and a typed payload — `MailEvent`, `MailHeld`, `MailHoldOutcome`
 or `InboundMail` — or no payload for an event this version does not know.

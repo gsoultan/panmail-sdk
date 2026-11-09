@@ -309,6 +309,35 @@ succeeds, so a removal is safe to repeat. The address was usually suppressed by
 a hard bounce or a complaint: mailing it again before that has changed is how
 a sending reputation is spent.
 
+## Is the gateway ready?
+
+`Ready` / `ready()` asks the gateway's `/readyz`, the same check a load
+balancer uses: can it serve right now, database included. It needs no key and
+sends none.
+
+```go
+var notReady *panmail.NotReadyError
+if err := client.Ready(ctx); errors.As(err, &notReady) {
+    log.Println("gateway not ready:", notReady.State, notReady.Failed) // not ready [database]
+} else if err != nil {
+    log.Println("could not ask the gateway:", err)
+}
+```
+
+```php
+try {
+    $client->ready();
+} catch (NotReadyException $e) {
+    echo "gateway not ready: {$e->state} ", implode(', ', $e->failed), PHP_EOL;
+}
+```
+
+`NotReadyError` / `NotReadyException` is the gateway itself saying no, and why:
+a dependency failed, or it is shutting down. It comes back by itself, with no
+restart. Any other error means the answer never arrived — a proxy's 503, an
+ingress that does not route `/readyz`, a dropped connection. A 200 counts only
+if it says `ready`, so a web page served on that path is never taken for one.
+
 ## Not using an SDK
 
 You do not have to. [`docs/WIRE.md`](docs/WIRE.md) documents the HTTP JSON

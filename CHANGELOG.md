@@ -10,6 +10,13 @@ Both language packages take their version from the tag, so they are always relea
 
 ### Added
 
+- **Readiness** — `Client.Ready` in Go and `$client->ready()` in PHP ask the
+  gateway's `/readyz` whether it can serve right now, database included.
+  `NotReadyError` / `NotReadyException` is the gateway saying no, with the
+  dependencies that failed in `Failed` / `$failed`, or that it is shutting
+  down. No API key is sent. A 200 counts only when its body says `ready`.
+  It needs a gateway that serves `/readyz`.
+
 - **Allowed senders on listed providers** — `Provider.AllowedSenders` in Go and
   `$provider->allowedSenders` in PHP: the From addresses a provider will send
   as, each an exact address or a whole domain written `*@domain`. It is the

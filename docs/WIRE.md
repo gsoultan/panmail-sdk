@@ -744,6 +744,43 @@ refusal, not a suppressed recipient.
 
 ---
 
+## Readiness
+
+Whether the gateway can serve right now. It is a plain HTTP route beside the
+procedures, not a Connect procedure, so it has no proto and no error envelope.
+
+```
+GET https://mail.example.com/readyz
+```
+
+No key: it is unauthenticated, because a load balancer has to reach it. The
+gateway answers on any method; the SDKs send `POST` with an empty body,
+because the PHP client's `Transport` only sends POST and changing that would
+break every custom transport.
+
+| Answer | Meaning |
+| --- | --- |
+| `200 {"status":"ready"}` | It can serve. |
+| `503 {"failed":["database"],"status":"not ready"}` | A dependency's check failed; `failed` names each, sorted. |
+| `503 {"status":"shutting down"}` | The instance is draining before it stops. |
+
+The gateway caches its answer for a second and runs concurrent checks as one,
+so asking more often than that reaches nothing. A not-ready instance recovers
+on its own once the dependency does.
+
+Beside it is `/healthz`, liveness: `200 OK` while the process runs, checking
+nothing external on purpose. It is for an orchestrator deciding whether to
+restart the process, and the SDKs do not call it.
+
+The SDKs: `Ready` / `ready()`. A `503` carrying a `status` is
+`NotReadyError` / `NotReadyException`; any other non-200 is a plain
+`APIError` / `ApiException`, never an auth error, since no key was sent; a
+`200` whose body is not `"status":"ready"` is an error too, because a gateway
+too old to have the route, or a proxy serving a web app on every path, answers
+`200` with a page. The answer is read to 64 KiB at most. Nothing is retried.
+
+---
+
 ## Generating your own client
 
 The protos are published in [`../proto`](../proto), copied verbatim from the
