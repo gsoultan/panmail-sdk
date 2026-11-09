@@ -46,6 +46,11 @@
 // tenant's suppression list, for a key holding suppressions:read and
 // suppressions:write respectively.
 //
+// # Readiness
+//
+// Ready asks the gateway's /readyz whether it can serve right now, and needs
+// no key. A *NotReadyError is the gateway saying no and naming what failed.
+//
 // # Webhooks
 //
 // VerifyWebhook checks a delivery came from the gateway; ParseWebhook does the

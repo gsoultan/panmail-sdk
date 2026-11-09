@@ -9,6 +9,7 @@ use Panmail\Exception\AuthException;
 use Panmail\Exception\BacklogFullException;
 use Panmail\Exception\IdempotencyKeyConflictException;
 use Panmail\Exception\InvalidMessageException;
+use Panmail\Exception\NotReadyException;
 use Panmail\Exception\RateLimitedException;
 use Panmail\Exception\SuppressedRecipientException;
 use Panmail\Exception\TransportException;
@@ -120,6 +121,21 @@ final class Client
     private const REMOVE_SUPPRESSION_PROCEDURE = '/panmail.v1.SuppressionService/RemoveSuppression';
 
     /**
+     * The gateway's readiness endpoint. It is a plain HTTP route beside the
+     * Connect procedures, not one of them, so it has no proto and no Connect
+     * error envelope.
+     */
+    private const READY_PATH = '/readyz';
+
+    /**
+     * Bounds a readiness answer. The gateway's is a status and the names of
+     * what failed, a few dozen bytes; anything near this is not it. The
+     * transport bounds every body at 1 MiB, so this is checked after it, to
+     * the same byte the Go client stops reading at.
+     */
+    private const MAX_READY_BYTES = 64 << 10;
+
+    /**
      * Bounds a single request: a send, or one page of a provider listing.
      * Generous, because the gateway writes a message to its outbox before
      * answering and that is a disk write on a possibly busy database — but
@@ -139,6 +155,13 @@ final class Client
 
     /** @var array<string, string> */
     private readonly array $headers;
+
+    /**
+     * The caller's own headers, without the api key: what ready() sends.
+     *
+     * @var array<string, string>
+     */
+    private readonly array $extraHeaders;
 
     private readonly Transport $transport;
 
@@ -188,6 +211,7 @@ final class Client
             }
         }
         self::validateHeaders($headers);
+        $this->extraHeaders = $headers;
         $headers[self::API_KEY_HEADER] = $apiKey;
         $headers['Content-Type'] = 'application/json';
         $this->headers = $headers;
@@ -537,6 +561,98 @@ final class Client
             $this->classify(...),
             'a removal result'
         );
+    }
+
+    /**
+     * Asks the gateway whether it can serve requests right now. Returning
+     * without throwing means it said it can.
+     *
+     * It calls the gateway's /readyz endpoint, the one a load balancer uses,
+     * which checks the gateway's own dependencies — its database — rather than
+     * just whether the process is up. A NotReadyException is the gateway
+     * saying no and naming why. Any other exception means the question did not
+     * get the gateway's answer: treat it as not ready too, but it is the path
+     * to the gateway, not the gateway, that is worth looking at.
+     *
+     * It sends no API key. The endpoint is unauthenticated, because a load
+     * balancer has to reach it, and a tenant's sending credential has no
+     * business on a request that does nothing with it. The headers option is
+     * sent, since a proxy that demands a header for a send demands it here too.
+     *
+     * The request is a POST with an empty body. The gateway answers readiness
+     * on any method, and Transport has only ever sent POST, so both clients
+     * send the same request rather than this one breaking every custom
+     * transport to send a GET.
+     *
+     * The gateway caches its answer for a second, so calling this in a loop
+     * does not reach the database any faster than that. Nothing is retried,
+     * and the timeout option bounds it as it bounds a send.
+     *
+     * @throws NotReadyException  the gateway said it cannot serve, and why
+     * @throws ApiException       any other answer that was not a 200
+     * @throws TransportException the request did not complete, or a 200 carried no readiness answer
+     */
+    public function ready(): void
+    {
+        $response = $this->transport->send($this->baseUrl . self::READY_PATH, $this->extraHeaders, '', $this->timeout);
+
+        $body = $response->body;
+        $state = '';
+        /** @var list<string> $failed */
+        $failed = [];
+        if (strlen($body) <= self::MAX_READY_BYTES) {
+            // Only these two fields: the answer carries nothing else a caller
+            // needs, and reading nothing else means nothing else can be
+            // handed back.
+            $decoded = json_decode($body, true);
+            if (is_array($decoded)) {
+                $state = self::text($decoded['status'] ?? '');
+                $names = $decoded['failed'] ?? [];
+                foreach (is_array($names) ? $names : [] as $name) {
+                    $failed[] = self::text($name);
+                }
+            }
+        }
+
+        if ($response->status === 200 && $state === 'ready') {
+            return;
+        }
+        if ($response->status === 200) {
+            // A 200 alone is not "ready". A gateway older than /readyz, or a
+            // proxy routing every unknown path to a web app, answers it with a
+            // page — and calling that ready is the one wrong answer this
+            // method must not give.
+            throw new TransportException(
+                'panmail: ' . self::READY_PATH . ' answered 200 without a readiness answer; '
+                . 'the gateway may be too old to have one, or something in front of it served the path'
+            );
+        }
+        if ($response->status === 503 && $state !== '') {
+            // Quoted because the gateway wrote them and a log will read them.
+            $message = 'panmail: the gateway is not ready: ' . self::quote($state);
+            if ($failed !== []) {
+                $message .= ', failing ' . implode(', ', array_map(self::quote(...), $failed));
+            }
+
+            throw new NotReadyException($message, $state, $failed, $response->status);
+        }
+
+        // Not classified: /readyz is not a Connect procedure, so a status
+        // means only itself here. A 401 or 403 is something in front of the
+        // gateway, and calling it a key the gateway refused would be wrong,
+        // since no key was sent. The code is whatever the body carried, as the
+        // Go client keeps it, and no more.
+        [, $message] = self::refusalOf($response);
+        $decoded = json_decode($body, true);
+        $code = is_array($decoded) ? self::text($decoded['code'] ?? '') : '';
+
+        throw new ApiException("panmail: $code: $message", $code, $response->status);
+    }
+
+    /** A string the gateway wrote, quoted and escaped for a log line, as Go's %q would. */
+    private static function quote(string $text): string
+    {
+        return '"' . addcslashes($text, "\0..\37\"\\\177") . '"';
     }
 
     /**
